@@ -27,7 +27,7 @@ from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, create_default_
 # -------------------------
 # Application Factory
 # -------------------------
-app = Flask(__name__)
+app = Flask(__name__, static_folder='public')
 
 # Load configuration
 env = os.environ.get('FLASK_ENV', 'development')
