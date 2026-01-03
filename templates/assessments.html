@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+{% block title %}Assessments{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-clipboard-data"></i> {% if archived %}Archived {% endif %}Assessments</h2>
+        <div>
+            {% if not archived and (current_user.is_admin() or current_user.is_teacher()) %}
+            <a href="{{ url_for('assessments_archived') }}" class="btn btn-outline-secondary me-2">
+                <i class="bi bi-archive"></i> View Archived
+            </a>
+            {% endif %}
+            {% if current_user.is_admin() or current_user.is_teacher() %}
+            <a href="{{ url_for('new_assessment') }}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i> New Assessment
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filter Form (if you have one) -->
+    {% if form %}
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2">
+                <div class="col-md-3">
+                    {{ form.subject.label(class="form-label") }}
+                    {{ form.subject(class="form-select") }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.class_name.label(class="form-label") }}
+                    {{ form.class_name(class="form-select") }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.category.label(class="form-label") }}
+                    {{ form.category(class="form-select") }}
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-outline-primary me-2">Filter</button>
+                    <a href="{{ url_for('assessments_list') }}" class="btn btn-outline-secondary">Reset</a>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Student</th>
+                            <th>Category</th>
+                            <th>Subject</th>
+                            <th>Score</th>
+                            <th>Percentage</th>
+                            <th>Term</th>
+                            <th>Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in assessments %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('student_view', student_id=a.student.id) }}">
+                                    {{ a.student.full_name() if a.student else 'Unknown' }}
+                                </a>
+                                <br>
+                                <small class="text-muted">{{ a.student.student_number if a.student else 'N/A' }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-primary">
+                                    {% if category_labels and a.category in category_labels %}
+                                        {{ category_labels[a.category] }}
+                                    {% else %}
+                                        {{ a.category or 'N/A' }}
+                                    {% endif %}
+                                </span>
+                            </td>
+                            <td>{{ a.subject or '-' }}</td>
+                            <td>
+                                {{ "%.1f"|format(a.score) if a.score else '0' }}/{{ "%.0f"|format(a.max_score) if a.max_score else '100' }}
+                            </td>
+                            <td>
+                                <strong>
+                                    {% if a.score and a.max_score and a.max_score > 0 %}
+                                        {{ "%.1f"|format((a.score/a.max_score)*100) }}%
+                                    {% else %}
+                                        0%
+                                    {% endif %}
+                                </strong>
+                            </td>
+                            <td><small>{{ a.term or '-' }}</small></td>
+                            <td><small>{{ a.date_recorded.strftime('%Y-%m-%d') if a.date_recorded else 'N/A' }}</small></td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="{{ url_for('assessment_edit', assessment_id=a.id) }}" 
+                                       class="btn btn-outline-warning">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    {% if archived %}
+                                    <form method="POST" action="{{ url_for('assessment_unarchive', assessment_id=a.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-success" 
+                                                title="Unarchive Assessment">
+                                            <i class="bi bi-archive-fill"></i>
+                                        </button>
+                                    </form>
+                                    {% else %}
+                                    <form method="POST" action="{{ url_for('assessment_archive', assessment_id=a.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-outline-secondary" 
+                                                title="Archive Assessment">
+                                            <i class="bi bi-archive"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-outline-danger" 
+                                            data-bs-toggle="modal" 
+                                            data-bs-target="#deleteModal{{ a.id }}">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                                
+                                <!-- Delete Confirmation Modal -->
+                                <div class="modal fade" id="deleteModal{{ a.id }}" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Confirm Delete</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                Delete assessment for 
+                                                <strong>{{ a.student.full_name() if a.student else 'Unknown Student' }}</strong>?
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <form method="POST" action="{{ url_for('assessment_delete', assessment_id=a.id) }}">
+                                                    <button type="submit" class="btn btn-danger">Delete</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">
+                                No assessments found.
+                                {% if not current_user.is_student() %}
+                                <a href="{{ url_for('new_assessment') }}">Create your first assessment</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Pagination -->
+        {% if pagination and pagination.pages > 1 %}
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0">
+                    <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('assessments_list', 
+                            page=pagination.prev_num if pagination.has_prev else 1,
+                            subject=form.subject.data if form else '',
+                            class_name=form.class_name.data if form else '',
+                            category=form.category.data if form else '') }}">
+                            Previous
+                        </a>
+                    </li>
+                    
+                    {% for page_num in pagination.iter_pages(left_edge=2, left_current=2, right_current=3, right_edge=2) %}
+                        {% if page_num %}
+                            <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                                <a class="page-link" href="{{ url_for('assessments_list', 
+                                    page=page_num,
+                                    subject=form.subject.data if form else '',
+                                    class_name=form.class_name.data if form else '',
+                                    category=form.category.data if form else '') }}">
+                                    {{ page_num }}
+                                </a>
+                            </li>
+                        {% else %}
+                            <li class="page-item disabled">
+                                <span class="page-link">...</span>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('assessments_list', 
+                            page=pagination.next_num if pagination.has_next else pagination.page,
+                            subject=form.subject.data if form else '',
+                            class_name=form.class_name.data if form else '',
+                            category=form.category.data if form else '') }}">
+                            Next
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Confirm before delete
+    document.addEventListener('DOMContentLoaded', function() {
+        const deleteForms = document.querySelectorAll('form[action*="assessment_delete"]');
+        deleteForms.forEach(form => {
+            form.addEventListener('submit', function(e) {
+                if (!confirm('Are you sure you want to delete this assessment?')) {
+                    e.preventDefault();
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

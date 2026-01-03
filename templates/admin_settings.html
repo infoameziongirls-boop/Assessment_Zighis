@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Admin Settings</h2>
+    
+    <div class="row">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Global Assessment Settings</h5>
+                    
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    {{ form.current_term.label(class="form-label") }}
+                                    {{ form.current_term(class="form-select") }}
+                                    {% for error in form.current_term.errors %}
+                                        <span class="text-danger">{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    {{ form.current_academic_year.label(class="form-label") }}
+                                    {{ form.current_academic_year(class="form-control", placeholder="e.g., 2024-2025") }}
+                                    {% for error in form.current_academic_year.errors %}
+                                        <span class="text-danger">{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    {{ form.current_session.label(class="form-label") }}
+                                    {{ form.current_session(class="form-control", placeholder="e.g., First Term") }}
+                                    {% for error in form.current_session.errors %}
+                                        <span class="text-danger">{{ error }}</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <div class="form-check mt-4">
+                                        {{ form.assessment_active(class="form-check-input") }}
+                                        {{ form.assessment_active.label(class="form-check-label") }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save"></i> Save Settings
+                            </button>
+                            <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left"></i> Back to Dashboard
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">Current Settings</h5>
+                    <dl class="row">
+                        <dt class="col-sm-5">Term:</dt>
+                        <dd class="col-sm-7">{{ dict(config.TERMS).get(settings.current_term, settings.current_term) }}</dd>
+                        
+                        <dt class="col-sm-5">Academic Year:</dt>
+                        <dd class="col-sm-7">{{ settings.current_academic_year }}</dd>
+                        
+                        <dt class="col-sm-5">Session:</dt>
+                        <dd class="col-sm-7">{{ settings.current_session }}</dd>
+                        
+                        <dt class="col-sm-5">Assessments:</dt>
+                        <dd class="col-sm-7">
+                            {% if settings.assessment_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                            {% endif %}
+                        </dd>
+                    </dl>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="card-title">Subject Assignments</h6>
+                    <p class="small text-muted">Manage teacher subject assignments in the Users section.</p>
+                    <a href="{{ url_for('users') }}" class="btn btn-sm btn-outline-primary">Manage Users</a>
+                    
+                    <h6 class="card-title mt-3">Archive Management</h6>
+                    <p class="small text-muted">Archive assessments from previous terms.</p>
+                    <form method="POST" action="{{ url_for('archive_term') }}" onsubmit="return confirm('Archive all assessments from previous terms?');">
+                        <button type="submit" class="btn btn-sm btn-warning">Archive Previous Terms</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

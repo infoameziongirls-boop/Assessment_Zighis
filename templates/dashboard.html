@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-speedometer2"></i> Welcome, {{ current_user.username }}{% if current_user.is_teacher() and current_user.subject %} ({{ current_user.get_subject_display() }}){% endif %}!</h2>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card stat-card success">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Total Students</h6>
+                        <h2 class="mb-0">{{ student_count }}</h2>
+                    </div>
+                    <div>
+                        <i class="bi bi-people" style="font-size: 3rem; opacity: 0.3;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">Total Assessments</h6>
+                        <h2 class="mb-0">{{ assessment_count }}</h2>
+                    </div>
+                    <div>
+                        <i class="bi bi-clipboard-data" style="font-size: 3rem; opacity: 0.3;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card stat-card danger">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h6 class="text-muted">System Users</h6>
+                        <h2 class="mb-0">{{ users_count }}</h2>
+                    </div>
+                    <div>
+                        <i class="bi bi-person-gear" style="font-size: 3rem; opacity: 0.3;"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Assessments</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Student</th>
+                        <th>Category</th>
+                        <th>Subject</th>
+                        <th>Score</th>
+                        <th>Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in recent %}
+                    <tr>
+                        <td><a href="{{ url_for('student_view', student_id=a.student.id) }}">{{ a.student.full_name() }}</a></td>
+                        <td><span class="badge bg-primary">{{ CATEGORY_LABELS[a.category] }}</span></td>
+                        <td>{{ a.subject or '-' }}</td>
+                        <td>{{ "%.1f"|format(a.score) }}/{{ "%.0f"|format(a.max_score) }} <small class="text-muted">({{ "%.1f"|format(a.get_percentage()) }}%)</small></td>
+                        <td><small>{{ a.date_recorded.strftime('%Y-%m-%d %H:%M') }}</small></td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">No assessments yet</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

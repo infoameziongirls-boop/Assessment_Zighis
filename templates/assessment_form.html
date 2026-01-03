@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{% if assessment %}Edit Assessment{% else %}New Assessment{% endif %}</h2>
+    
+    <form method="POST">
+        {{ form.hidden_tag() }}
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.student_name.label(class="form-label") }}
+                    {{ form.student_name(class="form-select") }}
+                    {% for error in form.student_name.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.reference_number.label(class="form-label") }}
+                    {{ form.reference_number(class="form-control", placeholder="Reference number will auto-fill", readonly=True) }}
+                    {% for error in form.reference_number.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.student_number.label(class="form-label") }}
+                    {{ form.student_number(class="form-control", placeholder="Student number will auto-fill or enter manually") }}
+                    {% for error in form.student_number.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                    <div class="form-text">
+                        Student number will auto-fill when student is selected
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.category.label(class="form-label") }}
+                    {{ form.category(class="form-select") }}
+                    {% for error in form.category.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.subject.label(class="form-label") }}
+                    {% if current_user.is_teacher() and current_user.subject %}
+                    <input type="text" class="form-control" value="{{ current_user.subject|title }}" readonly>
+                    <input type="hidden" name="subject" value="{{ current_user.subject }}">
+                    {% else %}
+                    {{ form.subject(class="form-select") }}
+                    {% endif %}
+                    {% for error in form.subject.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.class_name.label(class="form-label") }}
+                    {% if current_user.is_teacher() and current_user.class_name %}
+                    <input type="text" class="form-control" value="{{ current_user.class_name }}" readonly>
+                    <input type="hidden" name="class_name" value="{{ current_user.class_name }}">
+                    {% else %}
+                    {{ form.class_name(class="form-select") }}
+                    {% endif %}
+                    {% for error in form.class_name.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-4">
+                <div class="mb-3">
+                    {{ form.score.label(class="form-label") }}
+                    {{ form.score(class="form-control", type="number", step="0.1", min="0") }}
+                    {% for error in form.score.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="mb-3">
+                    {{ form.max_score.label(class="form-label") }}
+                    {{ form.max_score(class="form-select") }}
+                    {% for error in form.max_score.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label class="form-label">Percentage</label>
+                    <input type="text" class="form-control" id="percentage" readonly>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-4">
+                <div class="mb-3">
+                    {{ form.term.label(class="form-label") }}
+                    {{ form.term(class="form-control") }}
+                    {% for error in form.term.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="mb-3">
+                    {{ form.academic_year.label(class="form-label") }}
+                    {{ form.academic_year(class="form-control", readonly=True) }}
+                    {% for error in form.academic_year.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="mb-3">
+                    {{ form.session.label(class="form-label") }}
+                    {{ form.session(class="form-control", readonly=True) }}
+                    {% for error in form.session.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6">
+                <div class="mb-3">
+                    {{ form.assessor.label(class="form-label") }}
+                    {{ form.assessor(class="form-control") }}
+                    {% for error in form.assessor.errors %}
+                        <span class="text-danger">{{ error }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="mb-3">
+            {{ form.comments.label(class="form-label") }}
+            {{ form.comments(class="form-control", rows=3) }}
+            {% for error in form.comments.errors %}
+                <span class="text-danger">{{ error }}</span>
+            {% endfor %}
+        </div>
+        
+        <div class="mt-4">
+            <button type="submit" class="btn btn-primary">
+                {% if assessment %}Update{% else %}Save{% endif %} Assessment
+            </button>
+            <a href="{{ url_for('assessments_list') }}" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Category max scores mapping
+    const categoryMaxScores = {
+        'ica1': 50.0,
+        'ica2': 50.0,
+        'icp1': 50.0,
+        'icp2': 50.0,
+        'gp1': 50.0,
+        'gp2': 50.0,
+        'practical': 100.0,
+        'mid_term': 100.0,
+        'end_term': 100.0
+    };
+
+    const studentData = {{ student_dict|tojson }};
+
+    // Auto-update max score based on category
+    document.addEventListener('DOMContentLoaded', function() {
+        const categorySelect = document.getElementById('category');
+        const maxScoreInput = document.getElementById('max_score');
+        const scoreInput = document.getElementById('score');
+        const percentageInput = document.getElementById('percentage');
+        const studentNumberInput = document.getElementById('student_number');
+        const studentNameInput = document.getElementById('student_name');
+        const referenceNumberInput = document.getElementById('reference_number');
+        
+        function updateMaxScore() {
+            const category = categorySelect.value;
+            const maxScore = categoryMaxScores[category] || 100.0;
+            maxScoreInput.value = maxScore;
+            calculatePercentage();
+        }
+        
+        function calculatePercentage() {
+            const score = parseFloat(scoreInput.value) || 0;
+            const maxScore = parseFloat(maxScoreInput.value) || 100;
+            
+            if (maxScore > 0) {
+                const percentage = (score / maxScore) * 100;
+                percentageInput.value = percentage.toFixed(2) + '%';
+            } else {
+                percentageInput.value = '0%';
+            }
+        }
+        
+        // Auto-fill student info when student number changes
+        studentNumberInput.addEventListener('blur', function() {
+            const studentNumber = this.value.trim();
+            if (studentNumber) {
+                // Make AJAX call to get student info
+                fetch(`/api/student_search?q=${encodeURIComponent(studentNumber)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.results && data.results.length > 0) {
+                            const student = data.results[0];
+                            studentNameInput.value = student.name;
+                            referenceNumberInput.value = student.reference_number || student.student_number;
+                        }
+                    })
+                    .catch(error => console.error('Error fetching student info:', error));
+            }
+        });
+        
+        const studentNameSelect = document.getElementById('student_name');
+        studentNameSelect.addEventListener('change', function() {
+            const sn = this.value;
+            if (sn && studentData[sn]) {
+                studentNumberInput.value = sn;
+                referenceNumberInput.value = studentData[sn].ref;
+            } else {
+                studentNumberInput.value = '';
+                referenceNumberInput.value = '';
+            }
+        });
+        
+        categorySelect.addEventListener('change', updateMaxScore);
+        scoreInput.addEventListener('input', calculatePercentage);
+        
+        // Set initial max score
+        updateMaxScore();
+    });
+</script>
+{% endblock %}

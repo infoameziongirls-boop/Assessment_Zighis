@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}{{ student.full_name() }}{% endblock %}
+{% block content %}
+<div class="mb-4">
+    <a href="{{ url_for('students') }}" class="btn btn-sm btn-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Students
+    </a>
+</div>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-8">
+                <h3>{{ student.full_name() }}</h3>
+                <p class="text-muted mb-1">
+                    <strong>Student Number:</strong> {{ student.student_number }}<br>
+                    <strong>Learning Area:</strong> {{ study_areas_dict.get(student.study_area, student.study_area or 'Not specified') }}
+                </p>
+            </div>
+            <div class="col-md-4 text-end">
+                {% if current_user.is_admin() or current_user.is_teacher() %}
+                <a href="{{ url_for('student_edit', student_id=student.id) }}" class="btn btn-warning">
+                    <i class="bi bi-pencil"></i> Edit
+                </a>
+                {% endif %}
+                <a href="{{ url_for('export_student_csv', student_id=student.id) }}{% if subject %}?subject={{ subject }}{% endif %}" class="btn btn-success">
+                    <i class="bi bi-file-earmark-text"></i> CSV
+                </a>
+                <a href="{{ url_for('export_student_excel', student_id=student.id) }}{% if subject %}?subject={{ subject }}{% endif %}" class="btn btn-success">
+                    <i class="bi bi-file-earmark-excel"></i> Excel
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if all_subjects %}
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <label for="subject_filter" class="form-label">Filter by Subject:</label>
+                <select id="subject_filter" class="form-select">
+                    <option value="">All Subjects</option>
+                    {% for subj in all_subjects %}
+                    <option value="{{ subj }}" {% if subj == subject %}selected{% endif %}>{{ subj }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if final_percent is not none %}
+<div class="card mb-4 border-success">
+    <div class="card-header bg-success text-white">
+        <h5 class="mb-0"><i class="bi bi-trophy"></i> Final Weighted Grade{% if subject %} for {{ subject }}{% endif %}</h5>
+    </div>
+    <div class="card-body text-center">
+        <div class="row align-items-center justify-content-center">
+            {% if gpa is not none %}
+            <div class="col-auto">
+                <h2 class="mb-1">{{ "%.1f"|format(gpa) }}</h2>
+                <small class="text-muted">GPA</small>
+            </div>
+            {% endif %}
+            <div class="col-auto">
+                <h1 class="display-4 mb-0"><strong>{{ "%.2f"|format(final_percent) }}%</strong></h1>
+            </div>
+            {% if letter_grade %}
+            <div class="col-auto">
+                <h2 class="mb-1">{{ letter_grade }}</h2>
+                <small class="text-muted">Letter Grade</small>
+            </div>
+            {% endif %}
+        </div>
+        {% if comment %}
+        <p class="mt-3"><strong style="font-size: 1.2em;">{{ comment }}</strong></p>
+        {% endif %}
+        <p class="text-muted">Based on available assessments{% if subject %} for {{ subject }}{% endif %}</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0"><i class="bi bi-bar-chart"></i> Assessment Summary by Category</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            {% for cat, data in summary.items() %}
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-body text-center">
+                        <h6>{{ category_labels[cat] }}</h6>
+                        <h3 class="mb-0">{{ "%.1f"|format(data.avg_percent) }}%</h3>
+                        <small class="text-muted">{{ data.count }} assessment(s)</small>
+                        <div class="progress mt-2" style="height: 8px;">
+                            <div class="progress-bar" style="width: {{ data.avg_percent }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-clipboard-data"></i> All Assessments</h5>
+        {% if current_user.is_admin() or current_user.is_teacher() %}
+        <a href="{{ url_for('new_assessment') }}?student={{ student.student_number }}" class="btn btn-sm btn-primary">
+            <i class="bi bi-plus-circle"></i> Add Assessment
+        </a>
+        {% endif %}
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Category</th>
+                        <th>Subject</th>
+                        <th>Score</th>
+                        <th>Percentage</th>
+                        <th>Term/Session</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in assessments %}
+                    <tr>
+                        <td><span class="badge bg-primary">{{ category_labels[a.category] }}</span></td>
+                        <td>{{ a.subject or '-' }}</td>
+                        <td>{{ "%.1f"|format(a.score) }}/{{ "%.0f"|format(a.max_score) }}</td>
+                        <td>
+                            <strong>{{ "%.1f"|format(a.get_percentage()) }}%</strong>
+                            <div class="progress" style="height: 5px;">
+                                <div class="progress-bar" style="width: {{ a.get_percentage() }}%"></div>
+                            </div>
+                        </td>
+                        <td>
+                            <small>{{ a.term or '-' }}<br>{{ a.session or '-' }}</small>
+                        </td>
+                        <td><small>{{ a.date_recorded.strftime('%Y-%m-%d') }}</small></td>
+                        <td>
+                            {% if current_user.is_admin() or (current_user.is_teacher() and a.teacher_id == current_user.id) %}
+                            <a href="{{ url_for('assessment_edit', assessment_id=a.id) }}" class="btn btn-sm btn-warning" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form method="POST" action="{{ url_for('assessment_delete', assessment_id=a.id) }}" style="display: inline;" onsubmit="return confirm('Delete this assessment?');">
+                                <button type="submit" class="btn btn-sm btn-danger" title="Delete">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">No assessments yet</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('subject_filter').addEventListener('change', function() {
+    const subj = this.value;
+    const url = new URL(window.location);
+    if (subj) {
+        url.searchParams.set('subject', subj);
+    } else {
+        url.searchParams.delete('subject');
+    }
+    window.location = url;
+});
+</script>
+{% endblock %}

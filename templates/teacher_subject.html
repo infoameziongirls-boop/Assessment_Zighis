@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Teacher Subject Assignment{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">
+                    <i class="bi bi-person-badge"></i> Subject Assignment
+                    {% if teacher %} for {{ teacher.username }}{% endif %}
+                </h4>
+                <p class="text-muted">
+                    {% if teacher %}
+                    Assign subject specialization for teacher: {{ teacher.username }}
+                    {% else %}
+                    Select the subject you specialize in to filter your assessments.
+                    {% endif %}
+                </p>
+                
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    <div class="mb-3">
+                        {{ form.subject.label(class="form-label") }}
+                        {{ form.subject(class="form-select") }}
+                        <div class="form-text">This will filter assessments shown to you.</div>
+                    </div>
+                    <div class="mb-3">
+                        {{ form.class_name.label(class="form-label") }}
+                        {{ form.class_name(class="form-select") }}
+                        <div class="form-text">Optional: Select a class if you teach specific class.</div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> Save Assignment
+                        </button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to Dashboard
+                        </a>
+                    </div>
+                </form>
+                
+                {% if teacher %}
+                <div class="alert alert-info mt-4">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Current Assignment for {{ teacher.username }}:</strong> 
+                    {{ dict(config.LEARNING_AREAS).get(teacher.subject, teacher.subject or 'Not assigned') }}
+                    {% if teacher.class_name %}
+                    | Class: {{ teacher.class_name }}
+                    {% endif %}
+                </div>
+                {% elif current_user.subject %}
+                <div class="alert alert-info mt-4">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>Current Assignment:</strong> 
+                    {{ dict(config.LEARNING_AREAS).get(current_user.subject, current_user.subject) }}
+                    {% if current_user.class_name %}
+                    | Class: {{ current_user.class_name }}
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

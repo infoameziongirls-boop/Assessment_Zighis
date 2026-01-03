@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Import from Excel{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-excel"></i> Bulk Import from Excel</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="bi bi-info-circle"></i> Import Instructions</h6>
+                    <ol class="mb-0">
+                        <li>Download the Excel template using the button below</li>
+                        <li>Fill in the assessment data in the template</li>
+                        <li>Make sure student numbers match existing students in the system</li>
+                        <li>Upload the completed Excel file</li>
+                    </ol>
+                </div>
+
+                <div class="mb-4">
+                    <a href="{{ url_for('download_template', template_type='import') }}" class="btn btn-success">
+                        <i class="bi bi-download"></i> Download Import Template
+                    </a>
+                </div>
+
+                <hr>
+
+                <form method="POST" enctype="multipart/form-data">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.excel_file.label(class="form-label") }}
+                        {{ form.excel_file(class="form-control") }}
+                        <small class="text-muted">Accepted formats: .xlsx, .xls</small>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('assessments_list') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Import Assessments
+                        </button>
+                    </div>
+                </form>
+
+                <hr>
+
+                <div class="alert alert-warning">
+                    <h6><i class="bi bi-exclamation-triangle"></i> Excel Template Format</h6>
+                    <p class="mb-0">Your Excel file should have the following columns:</p>
+                    <ul class="mb-0">
+                        <li><strong>Column A:</strong> Student Number (required)</li>
+                        <li><strong>Column B:</strong> Category (IA, IPA, PP, MSE, or ETE)</li>
+                        <li><strong>Column C:</strong> Subject</li>
+                        <li><strong>Column D:</strong> Score (required)</li>
+                        <li><strong>Column E:</strong> Max Score (required)</li>
+                        <li><strong>Column F:</strong> Term</li>
+                        <li><strong>Column G:</strong> Session</li>
+                        <li><strong>Column H:</strong> Assessor</li>
+                        <li><strong>Column I:</strong> Comments</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
