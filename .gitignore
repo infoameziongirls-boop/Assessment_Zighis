@@ -1,0 +1,24 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+env/
+.pytest_cache/
+
+# --- Web / Node.js ---
+node_modules/
+.DS_Store
+dist/
+build/
+
+# --- Archives & Large Files ---
+*.rar
+*.zip
+*.7z
+*.exe
+
+# --- Windows System ---
+Thumbs.db
+desktop.ini
