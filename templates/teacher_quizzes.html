@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}My Quizzes{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="mb-0">
+                    <i class="bi bi-card-checklist"></i> {% if current_user.is_admin() %}All Quizzes{% else %}My Quizzes{% endif %}
+                </h2>
+                <p class="text-muted mb-0">
+                    {% if current_user.is_admin() %}
+                        Manage all quizzes across subjects
+                    {% else %}
+                        Create and manage quizzes for {{ current_user.subject|title }}
+                    {% endif %}
+                </p>
+            </div>
+            <div>
+                <a href="{{ url_for('create_quiz') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle"></i> Create Quiz
+                </a>
+            </div>
+        </div>
+
+        <!-- Quizzes List -->
+        <div class="card">
+            <div class="card-body">
+                {% if quizzes %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Title</th>
+                                <th>Subject</th>
+                                <th>Questions</th>
+                                <th>Time Limit</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for quiz in quizzes %}
+                            <tr>
+                                <td>
+                                    <div class="fw-bold">{{ quiz.title }}</div>
+                                    {% if quiz.description %}
+                                    <small class="text-muted">{{ quiz.description[:50] }}{% if quiz.description|length > 50 %}...{% endif %}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ quiz.get_subject_display() }}</td>
+                                <td>{{ quiz.questions|length }}</td>
+                                <td>
+                                    {% if quiz.time_limit %}
+                                    {{ quiz.time_limit }} min
+                                    {% else %}
+                                    No limit
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge {% if quiz.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                        {% if quiz.is_active %}Active{% else %}Inactive{% endif %}
+                                    </span>
+                                </td>
+                                <td>{{ quiz.created_at.strftime('%Y-%m-%d') }}</td>
+                                <td>
+                                    <a href="{{ url_for('quiz_detail', quiz_id=quiz.id) }}" class="btn btn-sm btn-outline-info" title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    <a href="{{ url_for('quiz_results_view', quiz_id=quiz.id) }}" class="btn btn-sm btn-outline-success" title="View Results">
+                                        <i class="bi bi-bar-chart"></i>
+                                    </a>
+                                    <a href="{{ url_for('edit_quiz', quiz_id=quiz.id) }}" class="btn btn-sm btn-outline-primary" title="Edit Quiz">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('delete_quiz', quiz_id=quiz.id) }}" style="display: inline;">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete Quiz" 
+                                                onclick="return confirm('Are you sure you want to delete the quiz \'{{ quiz.title }}\'? This action cannot be undone.')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-card-checklist display-1 text-muted"></i>
+                    <h4 class="mt-3">No quizzes created yet</h4>
+                    <p class="text-muted">Start by creating your first quiz to test student knowledge</p>
+                    <a href="{{ url_for('create_quiz') }}" class="btn btn-primary">
+                        <i class="bi bi-plus-circle"></i> Create First Quiz
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
