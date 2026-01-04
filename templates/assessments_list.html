@@ -41,7 +41,7 @@
                         <td><small>{{ a.date_recorded.strftime('%Y-%m-%d') }}</small></td>
                         <td>
                             <a href="{{ url_for('assessment_edit', assessment_id=a.id) }}" class="btn btn-sm btn-warning">
-                                <i class="bi bi-pencil"></i>
+                                <i class="bi bi-pencil me-2"></i>
                             </a>
                             <form method="POST" action="{{ url_for('assessment_delete', assessment_id=a.id) }}" style="display: inline;" onsubmit="return confirm('Delete?');">
                                 <button type="submit" class="btn btn-sm btn-danger">
