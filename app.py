@@ -17,12 +17,12 @@ from flask_login import LoginManager, login_user, login_required, logout_user, c
 from flask_bcrypt import Bcrypt
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileField, FileAllowed
-from wtforms import StringField, PasswordField, FloatField, SelectField, DateField, TextAreaField, BooleanField
+from wtforms import StringField, PasswordField, FloatField, SelectField, SelectMultipleField, DateField, TextAreaField, BooleanField
 from wtforms.validators import InputRequired, Length, Optional, NumberRange
 
 from config import config
-from models import User, Student, Assessment, Setting, ActivityLog, init_db
-from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, create_default_template, create_student_import_template
+from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt, init_db
+from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, create_default_template, create_student_import_template, create_question_import_template
 
 # -------------------------
 # Application Factory
@@ -55,12 +55,14 @@ init_db(app, bcrypt)
 # -------------------------
 # Activity Logging
 # -------------------------
-def log_activity(user_id, action, details=None):
+def log_activity(user, action, details=None):
     """Log user activity for auditing purposes"""
+    if not user or not user.is_authenticated:
+        return
     try:
         ip_address = request.remote_addr if request else None
         log_entry = ActivityLog(
-            user_id=user_id,
+            user_id=user.id,
             action=action,
             details=details,
             ip_address=ip_address
@@ -146,11 +148,47 @@ class StudentBulkImportForm(FlaskForm):
         FileAllowed(['xlsx', 'xls'], 'Excel files only!')
     ])
 
+class QuestionBulkImportForm(FlaskForm):
+    excel_file = FileField("Excel File", validators=[
+        InputRequired(),
+        FileAllowed(['xlsx', 'xls'], 'Excel files only!')
+    ])
+
 class SettingsForm(FlaskForm):
     current_term = SelectField("Current Term", choices=app.config['TERMS'], validators=[InputRequired()])
     current_academic_year = StringField("Current Academic Year", validators=[InputRequired()])
     current_session = StringField("Current Session", validators=[InputRequired()])
     assessment_active = BooleanField("Assessment Entry Active", default=True)
+
+
+class QuestionForm(FlaskForm):
+    question_text = TextAreaField("Question Text", validators=[InputRequired(), Length(min=10, max=1000)])
+    question_type = SelectField("Question Type", choices=[
+        ('mcq', 'Multiple Choice Question'),
+        ('true_false', 'True/False'),
+        ('short_answer', 'Short Answer')
+    ], validators=[InputRequired()])
+    options = TextAreaField("Options (for MCQ only)", validators=[Optional()], 
+                          render_kw={"placeholder": "Enter options one per line (A, B, C, D)"})
+    correct_answer = StringField("Correct Answer", validators=[InputRequired()], 
+                               render_kw={"placeholder": "For MCQ: A, B, C, or D. For True/False: True or False"})
+    difficulty = SelectField("Difficulty", choices=[
+        ('easy', 'Easy'),
+        ('medium', 'Medium'),
+        ('hard', 'Hard')
+    ], validators=[InputRequired()])
+    explanation = TextAreaField("Explanation (Optional)", validators=[Optional(), Length(max=500)])
+
+
+class QuizForm(FlaskForm):
+    title = StringField("Quiz Title", validators=[InputRequired(), Length(min=3, max=200)])
+    subject = SelectField("Subject", validators=[InputRequired()])
+    description = TextAreaField("Description", validators=[Optional(), Length(max=500)])
+    questions = SelectMultipleField("Questions", validators=[InputRequired()], 
+                                   render_kw={"size": 10})
+    time_limit = FloatField("Time Limit (minutes)", validators=[Optional(), NumberRange(min=1, max=180)])
+    is_active = BooleanField("Active", default=True)
+
 
 # -------------------------
 # Login manager
@@ -188,6 +226,14 @@ def student_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def student_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_student():
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
 # -------------------------
 # Authentication Routes
 # -------------------------
@@ -201,7 +247,7 @@ def login():
         user = User.query.filter_by(username=form.username.data.strip()).first()
         if user and user.check_password(form.password.data, bcrypt):
             login_user(user)
-            log_activity(user.id, "login", f"User {user.username} logged in")
+            log_activity(user, "login", f"User {user.username} logged in")
             flash("Logged in successfully", "success")
             next_page = request.args.get("next")
             return redirect(next_page or url_for("dashboard"))
@@ -245,7 +291,7 @@ def student_login():
                 db.session.commit()
             
             login_user(user)
-            log_activity(user.id, "student_login", f"Student {student.full_name()} ({student.student_number}) logged in")
+            log_activity(user, "student_login", f"Student {student.full_name()} ({student.student_number}) logged in")
             flash("Student login successful", "success")
             return redirect(url_for("student_dashboard"))
         else:
@@ -406,7 +452,7 @@ def student_new():
             db.session.add(student)
             db.session.commit()
             
-            log_activity(current_user.id, "create_student", f"Created student {student.full_name()} ({student.student_number})")
+            log_activity(current_user, "create_student", f"Created student {student.full_name()} ({student.student_number})")
             flash(f"Student {student.full_name()} added successfully. Reference Number: {reference_number}", "success")
             return redirect(url_for("students"))
     
@@ -430,7 +476,7 @@ def student_edit(student_id):
         student.class_name = form.class_name.data if form.class_name.data else None
         student.study_area = form.study_area.data if form.study_area.data else None
         db.session.commit()
-        log_activity(current_user.id, "edit_student", f"Edited student {student.full_name()} ({student.student_number})")
+        log_activity(current_user, "edit_student", f"Edited student {student.full_name()} ({student.student_number})")
         flash(f"Student {student.full_name()} updated successfully", "success")
         return redirect(url_for("students"))
     
@@ -444,7 +490,7 @@ def student_delete(student_id):
     student_name = student.full_name()
     db.session.delete(student)
     db.session.commit()
-    log_activity(current_user.id, "delete_student", f"Deleted student {student_name} ({student.student_number})")
+    log_activity(current_user, "delete_student", f"Deleted student {student_name} ({student.student_number})")
     flash(f"Student {student_name} deleted successfully", "info")
     return redirect(url_for("students"))
 
@@ -599,6 +645,70 @@ def student_bulk_import():
     
     return render_template("student_bulk_import.html", form=form)
 
+
+@app.route("/teacher/questions/bulk_import", methods=["GET", "POST"])
+@login_required
+@teacher_required
+def bulk_import_questions():
+    """Bulk import questions from Excel file"""
+    form = QuestionBulkImportForm()
+    
+    if form.validate_on_submit():
+        file = form.excel_file.data
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # Save uploaded file
+        file.save(filepath)
+        
+        try:
+            # Import questions
+            importer = QuestionBulkImporter(filepath)
+            questions_data = importer.import_questions()
+            
+            # Process and save questions
+            success_count = 0
+            error_count = 0
+            errors = []
+            
+            for data in questions_data:
+                try:
+                    # Create question
+                    question = Question(
+                        subject=current_user.subject,
+                        question_text=data['question_text'],
+                        question_type=data['question_type'],
+                        options=data['options'],
+                        correct_answer=data['correct_answer'],
+                        difficulty=data['difficulty'],
+                        explanation=data['explanation'],
+                        created_by=current_user.id
+                    )
+                    db.session.add(question)
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Error importing question '{data.get('question_text', 'unknown')[:50]}...': {str(e)}")
+                    error_count += 1
+            
+            db.session.commit()
+            
+            # Clean up uploaded file
+            os.remove(filepath)
+            
+            flash(f"Bulk import completed. {success_count} questions imported successfully. {error_count} errors.", "success")
+            if errors:
+                flash("Errors: " + "; ".join(errors[:5]), "warning")  # Show first 5 errors
+            
+            return redirect(url_for("teacher_question_bank"))
+            
+        except Exception as e:
+            flash(f"Error importing file: {str(e)}", "danger")
+            return redirect(url_for("bulk_import_questions"))
+    
+    return render_template("question_bulk_import.html", form=form)
+
+
 # -------------------------
 # Assessment Routes
 # -------------------------
@@ -723,7 +833,7 @@ def new_assessment():
             )
             db.session.add(assessment)
             db.session.commit()
-            log_activity(current_user.id, "create_assessment", f"Created assessment for {student.full_name()} ({assessment.category} in {assessment.subject})")
+            log_activity(current_user, "create_assessment", f"Created assessment for {student.full_name()} ({assessment.category} in {assessment.subject})")
             flash(f"Assessment saved for {student.full_name()}", "success")
             return redirect(url_for("student_view", student_id=student.id))
     
@@ -773,7 +883,7 @@ def assessment_edit(assessment_id):
         assessment.assessor = form.assessor.data
         assessment.comments = form.comments.data
         db.session.commit()
-        log_activity(current_user.id, "edit_assessment", f"Edited assessment for {assessment.student.full_name()} ({assessment.category} in {assessment.subject})")
+        log_activity(current_user, "edit_assessment", f"Edited assessment for {assessment.student.full_name()} ({assessment.category} in {assessment.subject})")
         flash("Assessment updated successfully", "success")
         return redirect(url_for("student_view", student_id=assessment.student_id))
     
@@ -793,7 +903,7 @@ def assessment_delete(assessment_id):
     student_id = assessment.student_id
     db.session.delete(assessment)
     db.session.commit()
-    log_activity(current_user.id, "delete_assessment", f"Deleted assessment for {assessment.student.full_name()} ({assessment.category} in {assessment.subject})")
+    log_activity(current_user, "delete_assessment", f"Deleted assessment for {assessment.student.full_name()} ({assessment.category} in {assessment.subject})")
     flash("Assessment deleted successfully", "info")
     return redirect(url_for("student_view", student_id=student_id))
 
@@ -898,7 +1008,7 @@ def create_user():
             )
             db.session.add(user)
             db.session.commit()
-            log_activity(current_user.id, "create_user", f"Created user {user.username} with role {user.role}")
+            log_activity(current_user, "create_user", f"Created user {user.username} with role {user.role}")
             flash(f"User {user.username} created successfully", "success")
             return redirect(url_for("users"))
     
@@ -916,7 +1026,7 @@ def edit_user(user_id):
         user.subject = form.subject.data if form.subject.data else None
         user.class_name = form.class_name.data if form.class_name.data else None
         db.session.commit()
-        log_activity(current_user.id, "edit_user", f"Edited user {user.username}")
+        log_activity(current_user, "edit_user", f"Edited user {user.username}")
         flash(f"User {user.username} updated successfully", "success")
         return redirect(url_for("users"))
     
@@ -938,7 +1048,7 @@ def reset_password(user_id):
     if form.validate_on_submit():
         user.password_hash = bcrypt.generate_password_hash(form.password.data).decode("utf-8")
         db.session.commit()
-        log_activity(current_user.id, "reset_password", f"Reset password for user {user.username}")
+        log_activity(current_user, "reset_password", f"Reset password for user {user.username}")
         flash(f"Password reset successfully for {user.username}", "success")
         return redirect(url_for("users"))
     
@@ -956,7 +1066,7 @@ def delete_user(user_id):
     username = user.username
     db.session.delete(user)
     db.session.commit()
-    log_activity(current_user.id, "delete_user", f"Deleted user {username}")
+    log_activity(current_user, "delete_user", f"Deleted user {username}")
     flash(f"User {username} deleted successfully", "info")
     return redirect(url_for("users"))
 
@@ -1050,6 +1160,648 @@ def teacher_subject():
         form.class_name.data = user.class_name
     
     return render_template("teacher_subject.html", form=form, teacher=None)
+
+
+# -------------------------------
+# Question Bank Routes
+# -------------------------------
+
+@app.route("/teacher/question-bank")
+@login_required
+def teacher_question_bank():
+    """Teacher can view and manage their subject questions, Admin can view all"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    # Admin can see all questions, teachers see their subject
+    if current_user.is_admin():
+        query = Question.query
+        # Allow admin to filter by subject
+        subject_filter = request.args.get('subject')
+        if subject_filter:
+            query = query.filter_by(subject=subject_filter)
+    else:
+        query = Question.query.filter_by(subject=current_user.subject)
+    
+    # Filter by status if specified
+    status_filter = request.args.get('status')
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+    
+    questions = query.order_by(Question.created_at.desc()).paginate(page=page, per_page=per_page)
+    
+    # Get subjects for admin filter
+    subjects = []
+    if current_user.is_admin():
+        subjects = db.session.query(Question.subject).distinct().all()
+        subjects = [s[0] for s in subjects]
+    
+    return render_template("teacher_question_bank.html", questions=questions, 
+                         status_filter=status_filter, subject_filter=request.args.get('subject'), 
+                         subjects=subjects, is_admin=current_user.is_admin())
+
+
+@app.route("/teacher/questions/new", methods=["GET", "POST"])
+@login_required
+@teacher_required
+def create_question():
+    """Teacher can create new questions"""
+    form = QuestionForm()
+    
+    if form.validate_on_submit():
+        question = Question(
+            subject=current_user.subject,
+            question_text=form.question_text.data,
+            question_type=form.question_type.data,
+            options=form.options.data if form.options.data else None,
+            correct_answer=form.correct_answer.data,
+            difficulty=form.difficulty.data,
+            explanation=form.explanation.data,
+            created_by=current_user.id
+        )
+        db.session.add(question)
+        db.session.commit()
+        
+        # Log activity
+        log_activity(current_user, "create_question", f"Created question ID {question.id} for {question.subject}")
+        
+        flash("Question created successfully and submitted for approval", "success")
+        return redirect(url_for("teacher_question_bank"))
+    
+    return render_template("question_form.html", form=form, title="Create Question")
+
+
+@app.route("/teacher/questions/<int:question_id>/edit", methods=["GET", "POST"])
+@login_required
+@teacher_required
+def edit_question(question_id):
+    """Teacher can edit their pending questions"""
+    question = Question.query.get_or_404(question_id)
+    
+    # Check permissions
+    if not question.can_edit(current_user):
+        abort(403)
+    
+    form = QuestionForm(obj=question)
+    
+    if form.validate_on_submit():
+        question.question_text = form.question_text.data
+        question.question_type = form.question_type.data
+        question.options = form.options.data if form.options.data else None
+        question.correct_answer = form.correct_answer.data
+        question.difficulty = form.difficulty.data
+        question.explanation = form.explanation.data
+        question.updated_at = datetime.utcnow()
+        
+        db.session.commit()
+        
+        # Log activity
+        log_activity(current_user, "edit_question", f"Edited question ID {question.id}")
+        
+        flash("Question updated successfully", "success")
+        return redirect(url_for("teacher_question_bank"))
+    
+    return render_template("question_form.html", form=form, title="Edit Question", question=question)
+
+
+@app.route("/teacher/questions/<int:question_id>/delete", methods=["POST"])
+@login_required
+@teacher_required
+def delete_question(question_id):
+    """Teacher can delete their pending questions"""
+    question = Question.query.get_or_404(question_id)
+    
+    # Check permissions
+    if not question.can_edit(current_user):
+        abort(403)
+    
+    db.session.delete(question)
+    db.session.commit()
+    
+    # Log activity
+    log_activity(current_user, "delete_question", f"Deleted question ID {question.id}")
+    
+    flash("Question deleted successfully", "success")
+    return redirect(url_for("teacher_question_bank"))
+
+
+@app.route("/admin/question-bank")
+@login_required
+@admin_required
+def admin_question_bank():
+    """Admin can moderate all questions"""
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    # Get all questions
+    query = Question.query
+    
+    # Filter by status if specified
+    status_filter = request.args.get('status', 'pending')
+    if status_filter:
+        query = query.filter_by(status=status_filter)
+    
+    # Filter by subject if specified
+    subject_filter = request.args.get('subject')
+    if subject_filter:
+        query = query.filter_by(subject=subject_filter)
+    
+    questions = query.order_by(Question.created_at.desc()).paginate(page=page, per_page=per_page)
+    
+    # Get all subjects for filter
+    subjects = db.session.query(Question.subject).distinct().all()
+    subjects = [s[0] for s in subjects]
+    
+    return render_template("admin_question_bank.html", questions=questions, 
+                         status_filter=status_filter, subject_filter=subject_filter, subjects=subjects)
+
+
+@app.route("/admin/questions/<int:question_id>/approve", methods=["POST"])
+@login_required
+@admin_required
+def approve_question(question_id):
+    """Admin can approve questions"""
+    question = Question.query.get_or_404(question_id)
+    
+    action = request.form.get('action')
+    if action == 'approve':
+        question.status = 'approved'
+        question.approved_by = current_user.id
+        flash("Question approved successfully", "success")
+    elif action == 'reject':
+        question.status = 'rejected'
+        question.approved_by = current_user.id
+        question.rejection_reason = request.form.get('rejection_reason')
+        flash("Question rejected", "warning")
+    
+    db.session.commit()
+    
+    # Log activity
+    log_activity(current_user, "moderate_question", f"{action}d question ID {question.id}")
+    
+    return redirect(url_for("admin_question_bank"))
+
+
+@app.route("/teacher/questions/<int:question_id>/approve", methods=["POST"])
+@login_required
+@teacher_required
+def teacher_approve_question(question_id):
+    """Teacher can approve questions in their subject"""
+    question = Question.query.get_or_404(question_id)
+    
+    # Check if question is in teacher's subject
+    if question.subject != current_user.subject:
+        abort(403)
+    
+    action = request.form.get('action')
+    if action == 'approve':
+        question.status = 'approved'
+        question.approved_by = current_user.id
+        flash("Question approved successfully", "success")
+    elif action == 'reject':
+        question.status = 'rejected'
+        question.approved_by = current_user.id
+        question.rejection_reason = request.form.get('rejection_reason')
+        flash("Question rejected", "warning")
+    
+    db.session.commit()
+    
+    # Log activity
+    log_activity(current_user, "moderate_question", f"{action}d question ID {question.id}")
+    
+    return redirect(url_for("teacher_question_bank"))
+
+
+@app.route("/student/questions")
+@login_required
+@student_required
+def student_questions():
+    """Student can view and answer questions"""
+    page = request.args.get('page', 1, type=int)
+    per_page = 10
+    
+    # Get approved questions for student's subjects
+    # For now, get questions from all subjects, but in production this should be filtered
+    # based on student's enrolled subjects
+    questions = Question.query.filter_by(status='approved').order_by(Question.created_at.desc()).paginate(page=page, per_page=per_page)
+    
+    # Get student's previous attempts
+    attempts = {attempt.question_id: attempt for attempt in 
+               QuestionAttempt.query.filter_by(student_id=current_user.id).all()}
+    
+    return render_template("student_questions.html", questions=questions, attempts=attempts)
+
+
+@app.route("/student/questions/<int:question_id>/attempt", methods=["POST"])
+@login_required
+@student_required
+def attempt_question(question_id):
+    """Student submits answer to a question"""
+    question = Question.query.get_or_404(question_id)
+    
+    if question.status != 'approved':
+        abort(404)
+    
+    student_answer = request.form.get('answer')
+    if not student_answer:
+        flash("Please provide an answer", "danger")
+        return redirect(url_for("student_questions"))
+    
+    # Check if correct
+    is_correct = False
+    if question.question_type == 'mcq':
+        is_correct = student_answer.strip().upper() == question.correct_answer.strip().upper()
+    elif question.question_type == 'true_false':
+        is_correct = student_answer.lower() == question.correct_answer.lower()
+    else:  # short_answer - for now, simple string match, but could be more sophisticated
+        is_correct = student_answer.strip().lower() == question.correct_answer.strip().lower()
+    
+    # Record attempt
+    attempt = QuestionAttempt(
+        student_id=current_user.id,
+        question_id=question_id,
+        student_answer=student_answer,
+        is_correct=is_correct
+    )
+    db.session.add(attempt)
+    db.session.commit()
+    
+    # Log activity
+    log_activity(current_user, "attempt_question", f"Answered question ID {question.id}, correct: {is_correct}")
+    
+    if is_correct:
+        flash("Correct answer!", "success")
+    else:
+        flash(f"Incorrect. The correct answer is: {question.correct_answer}", "warning")
+    
+    return redirect(url_for("student_questions"))
+
+
+@app.route("/teacher/quizzes")
+@login_required
+def teacher_quizzes():
+    """Teacher can view and manage quizzes for their subject, Admin can view all"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    if current_user.is_admin():
+        quizzes = Quiz.query.order_by(Quiz.created_at.desc()).all()
+    else:
+        # Teachers see quizzes for their subject
+        quizzes = Quiz.query.filter_by(subject=current_user.subject).order_by(Quiz.created_at.desc()).all()
+    
+    return render_template("teacher_quizzes.html", quizzes=quizzes)
+
+
+@app.route("/teacher/quizzes/new", methods=["GET", "POST"])
+@login_required
+def create_quiz():
+    """Teacher can create new quizzes for their subject, Admin can create for any subject"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    form = QuizForm()
+    
+    # Set subject choices based on user role
+    if current_user.is_admin():
+        # Admin can choose any subject
+        form.subject.choices = [(subject, subject.replace('_', ' ').title()) for subject in app.config['LEARNING_AREAS']]
+    else:
+        # Teachers are limited to their subject
+        form.subject.choices = [(current_user.subject, current_user.subject.replace('_', ' ').title())]
+        form.subject.data = current_user.subject
+    
+    if form.validate_on_submit():
+        # Get approved questions for the selected subject
+        questions = Question.query.filter_by(subject=form.subject.data, status='approved').all()
+        selected_question_ids = [int(q) for q in form.questions.data if q.isdigit()]
+        
+        # Validate that selected questions exist and are approved
+        valid_questions = [q for q in questions if q.id in selected_question_ids]
+        
+        quiz = Quiz(
+            title=form.title.data,
+            subject=form.subject.data,
+            description=form.description.data,
+            questions=[q.id for q in valid_questions],
+            time_limit=form.time_limit.data,
+            created_by=current_user.id
+        )
+        db.session.add(quiz)
+        db.session.commit()
+        
+        # Log activity
+        log_activity(current_user, "create_quiz", f"Created quiz '{quiz.title}' with {len(quiz.questions)} questions")
+        
+        flash("Quiz created successfully", "success")
+        return redirect(url_for("teacher_quizzes"))
+    
+    # For GET request, populate questions based on subject
+    subject = request.args.get('subject', current_user.subject if current_user.is_teacher() else None)
+    if subject:
+        questions = Question.query.filter_by(subject=subject, status='approved').all()
+        form.subject.data = subject
+    else:
+        questions = []
+    
+    form.questions.choices = [(str(q.id), f"{q.question_text[:50]}{'...' if len(q.question_text) > 50 else ''} ({q.difficulty.title()}, {q.question_type.upper()})") for q in questions]
+    
+    return render_template("quiz_form.html", form=form, available_questions=questions, quiz=None)
+
+
+@app.route("/student/quizzes")
+@login_required
+@student_required
+def student_quizzes():
+    """Student can view available quizzes"""
+    # For now, show all active quizzes, but should filter by student's subjects
+    quizzes = Quiz.query.filter_by(is_active=True).order_by(Quiz.created_at.desc()).all()
+    
+    # Get student's previous attempts
+    attempts = {attempt.quiz_id: attempt for attempt in 
+               QuizAttempt.query.filter_by(student_id=current_user.id).all()}
+    
+    return render_template("student_quizzes.html", quizzes=quizzes, attempts=attempts)
+
+
+@app.route("/student/quizzes/<int:quiz_id>/take", methods=["GET", "POST"])
+@login_required
+@student_required
+def take_quiz(quiz_id):
+    """Student takes a quiz"""
+    quiz = Quiz.query.get_or_404(quiz_id)
+    
+    if not quiz.is_active:
+        abort(404)
+    
+    # Check if student already attempted this quiz
+    existing_attempt = QuizAttempt.query.filter_by(student_id=current_user.id, quiz_id=quiz_id).first()
+    if existing_attempt:
+        flash("You have already taken this quiz", "warning")
+        return redirect(url_for("student_quizzes"))
+    
+    questions = Question.query.filter(Question.id.in_(quiz.questions)).all()
+    questions_dict = {q.id: q for q in questions}
+    
+    if request.method == 'POST':
+        # Process quiz submission
+        answers = {}
+        correct_count = 0
+        question_results = {}
+        
+        for qid in quiz.questions:
+            answer = request.form.get(f'answer_{qid}')
+            if answer:
+                question = questions_dict.get(int(qid))
+                if question:
+                    is_correct = False
+                    if question.question_type == 'mcq':
+                        is_correct = answer.strip().upper() == question.correct_answer.strip().upper()
+                    elif question.question_type == 'true_false':
+                        is_correct = answer.lower() == question.correct_answer.lower()
+                    else:
+                        is_correct = answer.strip().lower() == question.correct_answer.strip().lower()
+                    
+                    if is_correct:
+                        correct_count += 1
+                    
+                    # Store question result for display
+                    question_results[qid] = {
+                        'student_answer': answer,
+                        'is_correct': is_correct,
+                        'correct_answer': question.correct_answer
+                    }
+                    
+                    # Record individual question attempt
+                    attempt = QuestionAttempt(
+                        student_id=current_user.id,
+                        question_id=qid,
+                        student_answer=answer,
+                        is_correct=is_correct
+                    )
+                    db.session.add(attempt)
+        
+        # Record quiz attempt
+        quiz_attempt = QuizAttempt(
+            student_id=current_user.id,
+            quiz_id=quiz_id,
+            score=correct_count,
+            total_questions=len(quiz.questions),
+            correct_answers=correct_count,
+            completed_at=datetime.utcnow()
+        )
+        db.session.add(quiz_attempt)
+        db.session.commit()
+        
+        # Log activity
+        log_activity(current_user, "complete_quiz", f"Completed quiz '{quiz.title}' with score {correct_count}/{len(quiz.questions)}")
+        
+        # Store quiz results temporarily in session (expires in 2 hours)
+        import time
+        session['quiz_results'] = {
+            'quiz_id': quiz_id,
+            'quiz_title': quiz.title,
+            'score': correct_count,
+            'total_questions': len(quiz.questions),
+            'percentage': round((correct_count / len(quiz.questions)) * 100, 1) if len(quiz.questions) > 0 else 0,
+            'completed_at': datetime.utcnow().timestamp(),
+            'question_results': question_results  # Store individual question results
+        }
+        session.modified = True
+        
+        return redirect(url_for("quiz_results"))
+    
+    return render_template("take_quiz.html", quiz=quiz, questions=questions_dict)
+
+
+@app.route("/quiz/results")
+@login_required
+@student_required
+def quiz_results():
+    """Display quiz results temporarily (for 2 hours)"""
+    quiz_results = session.get('quiz_results')
+    
+    if not quiz_results:
+        flash("No quiz results available", "warning")
+        return redirect(url_for("student_quizzes"))
+    
+    # Check if results are still valid (within 2 hours)
+    import time
+    current_time = time.time()
+    results_time = quiz_results.get('completed_at', 0)
+    
+    if current_time - results_time > 7200:  # 2 hours in seconds
+        session.pop('quiz_results', None)
+        flash("Quiz results have expired", "info")
+        return redirect(url_for("student_quizzes"))
+    
+    # Get quiz and questions for detailed display
+    quiz = Quiz.query.get_or_404(quiz_results['quiz_id'])
+    questions = {}
+    for q_id in quiz.questions:
+        question = Question.query.get(q_id)
+        if question:
+            questions[q_id] = question
+    
+    return render_template("quiz_results.html", 
+                         quiz_results=quiz_results, 
+                         quiz=quiz, 
+                         questions=questions)
+
+
+@app.route("/teacher/quizzes/<int:quiz_id>")
+@login_required
+def quiz_detail(quiz_id):
+    """View quiz details"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    quiz = Quiz.query.get_or_404(quiz_id)
+    
+    # Check permissions: admin can see all, teachers can see their subject
+    if not current_user.is_admin() and quiz.subject != current_user.subject:
+        abort(403)
+    
+    # Get questions for this quiz
+    questions = {}
+    for q_id in quiz.questions:
+        question = Question.query.get(q_id)
+        if question:
+            questions[q_id] = question
+    
+    return render_template("quiz_detail.html", quiz=quiz, questions=questions)
+
+
+@app.route("/teacher/quizzes/<int:quiz_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_quiz(quiz_id):
+    """Edit existing quiz"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    quiz = Quiz.query.get_or_404(quiz_id)
+    
+    # Check permissions: admin can edit all, teachers can edit their subject quizzes
+    if not current_user.is_admin() and quiz.subject != current_user.subject:
+        abort(403)
+    
+    form = QuizForm()
+    
+    if form.validate_on_submit():
+        quiz.title = form.title.data
+        quiz.description = form.description.data
+        quiz.subject = form.subject.data
+        quiz.time_limit = form.time_limit.data if form.time_limit.data else None
+        quiz.is_active = form.is_active.data
+        
+        # Handle question selection
+        selected_questions = request.form.getlist('questions')
+        quiz.questions = [int(q) for q in selected_questions if q.isdigit()]
+        
+        db.session.commit()
+        log_activity(current_user, "edit_quiz", f"Edited quiz '{quiz.title}'")
+        flash("Quiz updated successfully", "success")
+        return redirect(url_for("teacher_quizzes"))
+    
+    # Pre-populate form
+    form.title.data = quiz.title
+    form.description = form.description.data if form.description.data else quiz.description
+    form.subject.data = quiz.subject
+    form.time_limit.data = quiz.time_limit
+    form.is_active.data = quiz.is_active
+    
+    # Get available questions for this subject
+    available_questions = Question.query.filter_by(
+        subject=quiz.subject, 
+        status='approved'
+    ).all()
+    
+    return render_template("quiz_form.html", form=form, quiz=quiz, available_questions=available_questions)
+
+
+@app.route("/teacher/quizzes/<int:quiz_id>/delete", methods=["POST"])
+@login_required
+def delete_quiz(quiz_id):
+    """Delete a quiz"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    quiz = Quiz.query.get_or_404(quiz_id)
+    
+    # Check permissions: admin can delete all, teachers can delete their subject quizzes
+    if not current_user.is_admin() and quiz.subject != current_user.subject:
+        abort(403)
+    
+    quiz_title = quiz.title
+    
+    # Delete associated attempts
+    QuizAttempt.query.filter_by(quiz_id=quiz_id).delete()
+    
+    # Delete the quiz
+    db.session.delete(quiz)
+    db.session.commit()
+    
+    log_activity(current_user, "delete_quiz", f"Deleted quiz '{quiz_title}'")
+    flash(f"Quiz '{quiz_title}' deleted successfully", "success")
+    return redirect(url_for("teacher_quizzes"))
+
+
+@app.route("/teacher/quizzes/<int:quiz_id>/results")
+@login_required
+def quiz_results_view(quiz_id):
+    """View results of a specific quiz"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    quiz = Quiz.query.get_or_404(quiz_id)
+    
+    # Check permissions: admin can see all, teachers can see their subject quizzes
+    if not current_user.is_admin() and quiz.subject != current_user.subject:
+        abort(403)
+    
+    # Get all attempts for this quiz
+    attempts = QuizAttempt.query.filter_by(quiz_id=quiz_id).order_by(QuizAttempt.completed_at.desc()).all()
+    
+    # Get student details
+    student_ids = [attempt.student_id for attempt in attempts]
+    students = {student.id: student for student in Student.query.filter(Student.id.in_(student_ids)).all()}
+    
+    return render_template("quiz_results_view.html", quiz=quiz, attempts=attempts, students=students)
+
+
+@app.route("/teacher/quiz-results")
+@login_required
+def teacher_quiz_results():
+    """Teacher can view all quiz results for their subject, Admin can view all"""
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+    
+    # Get quizzes based on permissions
+    if current_user.is_admin():
+        quizzes = Quiz.query.order_by(Quiz.created_at.desc()).all()
+    else:
+        quizzes = Quiz.query.filter_by(subject=current_user.subject).order_by(Quiz.created_at.desc()).all()
+    
+    # Get attempts for these quizzes
+    quiz_ids = [quiz.id for quiz in quizzes]
+    attempts = QuizAttempt.query.filter(QuizAttempt.quiz_id.in_(quiz_ids)).order_by(QuizAttempt.completed_at.desc()).all()
+    
+    # Group attempts by quiz
+    attempts_by_quiz = {}
+    for attempt in attempts:
+        if attempt.quiz_id not in attempts_by_quiz:
+            attempts_by_quiz[attempt.quiz_id] = []
+        attempts_by_quiz[attempt.quiz_id].append(attempt)
+    
+    # Get student details
+    student_ids = list(set(attempt.student_id for attempt in attempts))
+    students = {student.id: student for student in Student.query.filter(Student.id.in_(student_ids)).all()}
+    
+    return render_template("teacher_quiz_results.html", quizzes=quizzes, attempts_by_quiz=attempts_by_quiz, students=students)
+
 
 @app.route("/admin/archive-term", methods=["POST"])
 @login_required
@@ -1679,6 +2431,24 @@ def download_template(template_type):
         template_path,
         as_attachment=True,
         download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+@app.route("/download/question_template")
+@login_required
+@teacher_required
+def download_question_template():
+    """Download question import template"""
+    template_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'question_import_template.xlsx')
+    
+    # Create template if it doesn't exist
+    if not os.path.exists(template_path):
+        create_question_import_template(template_path)
+    
+    return send_file(
+        template_path,
+        as_attachment=True,
+        download_name="question_bulk_import_template.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 

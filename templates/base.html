@@ -133,6 +133,30 @@
                         </a>
                         {% endif %}
                         
+                        <!-- Question Bank Links -->
+                        {% if current_user.is_admin() %}
+                        <a class="nav-link {% if 'admin_question_bank' in request.endpoint %}active{% endif %}" href="{{ url_for('admin_question_bank') }}">
+                            <i class="bi bi-shield-check"></i> Moderate Questions
+                        </a>
+                        <a class="nav-link {% if 'teacher_quiz_results' in request.endpoint or 'quiz_results_view' in request.endpoint %}active{% endif %}" href="{{ url_for('teacher_quiz_results') }}">
+                            <i class="bi bi-bar-chart-line"></i> Quiz Results
+                        </a>
+                        {% elif current_user.is_teacher() %}
+                        <a class="nav-link {% if 'teacher_question_bank' in request.endpoint or 'create_question' in request.endpoint or 'edit_question' in request.endpoint %}active{% endif %}" href="{{ url_for('teacher_question_bank') }}">
+                            <i class="bi bi-question-circle"></i> Question Bank
+                        </a>
+                        <a class="nav-link {% if 'teacher_quizzes' in request.endpoint or 'create_quiz' in request.endpoint %}active{% endif %}" href="{{ url_for('teacher_quizzes') }}">
+                            <i class="bi bi-card-checklist"></i> Quizzes
+                        </a>
+                        <a class="nav-link {% if 'teacher_quiz_results' in request.endpoint or 'quiz_results_view' in request.endpoint %}active{% endif %}" href="{{ url_for('teacher_quiz_results') }}">
+                            <i class="bi bi-bar-chart-line"></i> Quiz Results
+                        </a>
+                        {% elif current_user.is_student() %}
+                        <a class="nav-link {% if 'student_quizzes' in request.endpoint %}active{% endif %}" href="{{ url_for('student_quizzes') }}">
+                            <i class="bi bi-card-checklist"></i> Take Quizzes
+                        </a>
+                        {% endif %}
+                        
                         <!-- Student Dashboard Link -->
                         {% if current_user.is_student() %}
                         <a class="nav-link {% if request.endpoint == 'student_dashboard' %}active{% endif %}" href="{{ url_for('student_dashboard') }}">

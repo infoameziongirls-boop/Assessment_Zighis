@@ -59,7 +59,7 @@ class User(UserMixin, db.Model):
         return self.subject.replace('_', ' ').title()
     
     def __repr__(self):
-        return f"<User {self.username} ({self.role})>"
+        return f"<User id={self.id}>"
 
 
 class Student(db.Model):
@@ -364,6 +364,120 @@ class ActivityLog(db.Model):
     
     def __repr__(self):
         return f"<ActivityLog {self.user.username} - {self.action} at {self.timestamp}>"
+
+
+class Question(db.Model):
+    __tablename__ = "questions"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(120), nullable=False, index=True)
+    question_text = db.Column(db.Text, nullable=False)
+    question_type = db.Column(db.String(20), nullable=False, default="mcq")  # mcq, true_false, short_answer
+    options = db.Column(db.JSON, nullable=True)  # For MCQ: ["A", "B", "C", "D"]
+    correct_answer = db.Column(db.String(500), nullable=False)  # For MCQ: "A", for true_false: "True"/"False", for short_answer: the answer
+    difficulty = db.Column(db.String(20), nullable=False, default="medium")  # easy, medium, hard
+    explanation = db.Column(db.Text, nullable=True)  # Optional explanation for the answer
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    approved_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="pending")  # pending, approved, rejected
+    rejection_reason = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    creator = db.relationship("User", foreign_keys=[created_by], backref="created_questions")
+    approver = db.relationship("User", foreign_keys=[approved_by], backref="approved_questions")
+    
+    def is_approved(self):
+        return self.status == "approved"
+    
+    def can_edit(self, user):
+        """Check if user can edit this question"""
+        if user.is_admin():
+            return True
+        if user.is_teacher() and user.id == self.created_by and self.status == "pending":
+            return True
+        return False
+    
+    def can_approve(self, user):
+        """Check if user can approve/reject this question"""
+        return user.is_admin() or (user.is_teacher() and user.subject == self.subject)
+    
+    def get_subject_display(self):
+        """Return formatted subject name"""
+        return self.subject.replace('_', ' ').title()
+    
+    def __repr__(self):
+        return f"<Question {self.id} - {self.subject}: {self.question_text[:50]}...>"
+
+
+class QuestionAttempt(db.Model):
+    __tablename__ = "question_attempts"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
+    question_id = db.Column(db.Integer, db.ForeignKey("questions.id"), nullable=False)
+    student_answer = db.Column(db.String(500), nullable=False)
+    is_correct = db.Column(db.Boolean, nullable=False)
+    attempted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    time_taken = db.Column(db.Integer, nullable=True)  # Time in seconds
+    
+    # Relationships
+    student = db.relationship("Student", backref="question_attempts")
+    question = db.relationship("Question", backref="attempts")
+    
+    def __repr__(self):
+        return f"<QuestionAttempt student={self.student_id} question={self.question_id} correct={self.is_correct}>"
+
+
+class Quiz(db.Model):
+    __tablename__ = "quizzes"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(200), nullable=False)
+    subject = db.Column(db.String(120), nullable=False, index=True)
+    description = db.Column(db.Text, nullable=True)
+    questions = db.Column(db.JSON, nullable=False)  # List of question IDs
+    time_limit = db.Column(db.Integer, nullable=True)  # Time limit in minutes
+    created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    creator = db.relationship("User", foreign_keys=[created_by], backref="created_quizzes")
+    
+    def get_subject_display(self):
+        """Return formatted subject name"""
+        return self.subject.replace('_', ' ').title()
+    
+    def __repr__(self):
+        return f"<Quiz {self.title} - {self.subject}>"
+
+
+class QuizAttempt(db.Model):
+    __tablename__ = "quiz_attempts"
+    
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
+    quiz_id = db.Column(db.Integer, db.ForeignKey("quizzes.id"), nullable=False)
+    score = db.Column(db.Float, nullable=False)
+    total_questions = db.Column(db.Integer, nullable=False)
+    correct_answers = db.Column(db.Integer, nullable=False)
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    time_taken = db.Column(db.Integer, nullable=True)  # Time in seconds
+    
+    # Relationships
+    student = db.relationship("Student", backref="quiz_attempts")
+    quiz = db.relationship("Quiz", backref="attempts")
+    
+    def get_percentage(self):
+        if self.total_questions > 0:
+            return (self.correct_answers / self.total_questions) * 100
+        return 0
+    
+    def __repr__(self):
+        return f"<QuizAttempt student={self.student_id} quiz={self.quiz_id} score={self.score}>"
 
 
 def init_db(app, bcrypt):
