@@ -9,8 +9,7 @@ class Config:
     # User roles
     USER_ROLES = [
         ('admin', 'Administrator'),
-        ('teacher', 'Teacher'),
-        ('student', 'Student')
+        ('teacher', 'Teacher')
     ]
     
     # Template configuration

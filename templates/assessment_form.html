@@ -19,30 +19,6 @@
             </div>
             <div class="col-md-6">
                 <div class="mb-3">
-                    {{ form.reference_number.label(class="form-label") }}
-                    {{ form.reference_number(class="form-control", placeholder="Reference number will auto-fill", readonly=True) }}
-                    {% for error in form.reference_number.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="mb-3">
-                    {{ form.student_number.label(class="form-label") }}
-                    {{ form.student_number(class="form-control", placeholder="Student number will auto-fill or enter manually") }}
-                    {% for error in form.student_number.errors %}
-                        <span class="text-danger">{{ error }}</span>
-                    {% endfor %}
-                    <div class="form-text">
-                        Student number will auto-fill when student is selected
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="mb-3">
                     {{ form.category.label(class="form-label") }}
                     {{ form.category(class="form-select") }}
                     {% for error in form.category.errors %}
@@ -51,6 +27,10 @@
                 </div>
             </div>
         </div>
+        
+        <!-- Hidden fields for auto-filled data -->
+        {{ form.student_number(class="d-none") }}
+        {{ form.reference_number(class="d-none") }}
         
         <div class="row">
             <div class="col-md-6">

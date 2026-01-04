@@ -22,7 +22,7 @@ from wtforms.validators import InputRequired, Length, Optional, NumberRange
 
 from config import config
 from models import User, Student, Assessment, Setting, init_db
-from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, create_default_template
+from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, create_default_template, create_student_import_template
 
 # -------------------------
 # Application Factory
@@ -114,6 +114,12 @@ class AssessmentFilterForm(FlaskForm):
     category = SelectField("Category", choices=[("", "-- All Categories --")] + app.config['ASSESSMENT_CATEGORIES'], validators=[Optional()])
 
 class BulkImportForm(FlaskForm):
+    excel_file = FileField("Excel File", validators=[
+        InputRequired(),
+        FileAllowed(['xlsx', 'xls'], 'Excel files only!')
+    ])
+
+class StudentBulkImportForm(FlaskForm):
     excel_file = FileField("Excel File", validators=[
         InputRequired(),
         FileAllowed(['xlsx', 'xls'], 'Excel files only!')
@@ -377,17 +383,6 @@ def student_new():
             db.session.add(student)
             db.session.commit()
             
-            # Create student user account
-            password = app.config['DEFAULT_STUDENT_PASSWORD']
-            pw_hash = bcrypt.generate_password_hash(password).decode("utf-8")
-            user = User(
-                username=reference_number,
-                password_hash=pw_hash,
-                role="student"
-            )
-            db.session.add(user)
-            db.session.commit()
-            
             flash(f"Student {student.full_name()} added successfully. Reference Number: {reference_number}", "success")
             return redirect(url_for("students"))
     
@@ -504,6 +499,79 @@ def student_view(student_id):
         category_labels=app.config['CATEGORY_LABELS'],
         study_areas_dict=dict(app.config['STUDY_AREAS'])
     )
+
+@app.route("/students/bulk-import", methods=["GET", "POST"])
+@login_required
+def student_bulk_import():
+    """Bulk import students from Excel file"""
+    # Only teachers and admins can bulk import students
+    if not (current_user.is_teacher() or current_user.is_admin()):
+        abort(403)
+        
+    form = StudentBulkImportForm()
+    
+    if form.validate_on_submit():
+        file = form.excel_file.data
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # Save uploaded file
+        file.save(filepath)
+        
+        try:
+            # Import students
+            importer = StudentBulkImporter(filepath)
+            students_data = importer.import_students()
+            
+            # Process and save students
+            success_count = 0
+            error_count = 0
+            errors = []
+            
+            for data in students_data:
+                try:
+                    # Check if student already exists
+                    exists = Student.query.filter_by(student_number=data['student_number']).first()
+                    if exists:
+                        errors.append(f"Student {data['student_number']} already exists")
+                        error_count += 1
+                        continue
+                    
+                    # Generate reference number
+                    reference_number = f"STU{random.randint(100000, 999999)}"
+                    
+                    student = Student(
+                        student_number=data['student_number'],
+                        first_name=data['first_name'],
+                        last_name=data['last_name'],
+                        middle_name=data.get('middle_name'),
+                        class_name=data.get('class_name'),
+                        study_area=data.get('study_area'),
+                        reference_number=reference_number
+                    )
+                    db.session.add(student)
+                    success_count += 1
+                    
+                except Exception as e:
+                    errors.append(f"Error importing {data.get('student_number', 'unknown')}: {str(e)}")
+                    error_count += 1
+            
+            db.session.commit()
+            
+            # Clean up uploaded file
+            os.remove(filepath)
+            
+            flash(f"Bulk import completed. {success_count} students imported successfully. {error_count} errors.", "success")
+            if errors:
+                flash("Errors: " + "; ".join(errors[:5]), "warning")  # Show first 5 errors
+            
+            return redirect(url_for("students"))
+            
+        except Exception as e:
+            flash(f"Error importing file: {str(e)}", "danger")
+            return redirect(url_for("student_bulk_import"))
+    
+    return render_template("student_bulk_import.html", form=form)
 
 # -------------------------
 # Assessment Routes
@@ -1545,6 +1613,9 @@ def download_template(template_type):
     elif template_type == "import":
         template_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'import_template.xlsx')
         filename = "bulk_import_template.xlsx"
+    elif template_type == "student_import":
+        template_path = os.path.join(app.config['TEMPLATE_FOLDER'], 'student_import_template.xlsx')
+        filename = "student_bulk_import_template.xlsx"
     else:
         abort(404)
     
@@ -1556,6 +1627,8 @@ def download_template(template_type):
     # Create template if it doesn't exist (for student template)
     if template_type == "student" and not os.path.exists(template_path):
         create_default_template(template_path)
+    elif template_type == "student_import" and not os.path.exists(template_path):
+        create_student_import_template(template_path)
     
     return send_file(
         template_path,
