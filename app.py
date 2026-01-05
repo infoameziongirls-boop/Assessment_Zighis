@@ -1888,6 +1888,20 @@ def edit_quiz(quiz_id):
         # Teachers are limited to their subject
         form.subject.choices = [(current_user.subject, current_user.subject.replace('_', ' ').title())]
     
+    # Determine subject for questions
+    subject = quiz.subject  # Default to current quiz subject
+    if request.method == 'POST':
+        subject = request.form.get('subject', quiz.subject)
+    
+    # Get available questions for the subject
+    available_questions = Question.query.filter_by(
+        subject=subject, 
+        status='approved'
+    ).all()
+    
+    # Set questions choices
+    form.questions.choices = [(q.id, f"{q.question_text[:50]}...") for q in available_questions]
+    
     if form.validate_on_submit():
         quiz.title = form.title.data
         quiz.description = form.description.data
@@ -1903,15 +1917,6 @@ def edit_quiz(quiz_id):
         log_activity(current_user, "edit_quiz", f"Edited quiz '{quiz.title}'")
         flash("Quiz updated successfully", "success")
         return redirect(url_for("teacher_quizzes"))
-    
-    # Get available questions for this subject
-    available_questions = Question.query.filter_by(
-        subject=quiz.subject, 
-        status='approved'
-    ).all()
-    
-    # Set questions choices
-    form.questions.choices = [(q.id, f"{q.question_text[:50]}...") for q in available_questions]
     
     # Pre-populate form
     form.title.data = quiz.title
