@@ -17,6 +17,36 @@
             </div>
         </div>
 
+        <!-- Subject Filter -->
+        {% if current_user.is_admin() %}
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Filter by Subject</h5>
+                        <form method="GET" class="row g-3">
+                            <div class="col-md-4">
+                                <select name="subject" class="form-select" onchange="this.form.submit()">
+                                    <option value="">All Subjects</option>
+                                    {% for subject_key, subject_name in all_subjects %}
+                                    <option value="{{ subject_key }}" {% if subject_filter == subject_key %}selected{% endif %}>
+                                        {{ subject_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <a href="{{ url_for('teacher_quiz_results') }}" class="btn btn-outline-secondary">
+                                    <i class="bi bi-x-circle"></i> Clear Filter
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         {% if quizzes %}
             {% for quiz in quizzes %}
             <div class="card mb-4">
@@ -38,6 +68,7 @@
                                     <tr>
                                         <th>Student</th>
                                         <th>Class</th>
+                                        <th>Learning Area</th>
                                         <th>Score</th>
                                         <th>Percentage</th>
                                         <th>Time Taken</th>
@@ -60,6 +91,13 @@
                                         <td>
                                             {% if student %}
                                                 {{ student.class_name or 'N/A' }}
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if student %}
+                                                {{ student.study_area or 'N/A' }}
                                             {% else %}
                                                 N/A
                                             {% endif %}

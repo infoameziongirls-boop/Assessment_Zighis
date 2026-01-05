@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title mb-4">
+                    <i class="bi bi-question-circle"></i> {{ title }}
+                </h4>
+                
+                <form method="POST">
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.question_text.label(class="form-label") }}
+                        {{ form.question_text(class="form-control", rows=4, placeholder="Enter the question text here...") }}
+                        {% if form.question_text.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.question_text.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            {{ form.question_type.label(class="form-label") }}
+                            {{ form.question_type(class="form-select") }}
+                            {% if form.question_type.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.question_type.errors %}{{ error }}{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            {{ form.difficulty.label(class="form-label") }}
+                            {{ form.difficulty(class="form-select") }}
+                            {% if form.difficulty.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in form.difficulty.errors %}{{ error }}{% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3" id="options-container" style="display: none;">
+                        {{ form.options.label(class="form-label") }}
+                        {{ form.options(class="form-control", rows=4, placeholder="Enter each option on a new line (e.g.:\nA. First option\nB. Second option\nC. Third option\nD. Fourth option)") }}
+                        <div class="form-text">For multiple choice questions, enter options one per line.</div>
+                        {% if form.options.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.options.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.correct_answer.label(class="form-label") }}
+                        {{ form.correct_answer(class="form-control", placeholder="For MCQ: A, B, C, or D. For True/False: True or False. For Short Answer: the exact answer") }}
+                        {% if form.correct_answer.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.correct_answer.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.marks.label(class="form-label") }}
+                        {{ form.marks(class="form-control", placeholder="1.0") }}
+                        {% if form.marks.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.marks.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3" id="keywords-container" style="display: none;">
+                        {{ form.keywords.label(class="form-label") }}
+                        {{ form.keywords(class="form-control", rows=3, placeholder="Enter important keywords one per line for flexible marking") }}
+                        <div class="form-text">For short answer questions, enter key terms that must appear in the student's answer.</div>
+                        {% if form.keywords.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.keywords.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.explanation.label(class="form-label") }}
+                        {{ form.explanation(class="form-control", rows=3, placeholder="Optional explanation for the correct answer...") }}
+                        {% if form.explanation.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.explanation.errors %}{{ error }}{% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> 
+                            {% if question %}Update Question{% else %}Create Question{% endif %}
+                        </button>
+                        <a href="{{ url_for('teacher_question_bank') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Back to Question Bank
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        {% if question %}
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">Question Preview</h5>
+                <div class="border rounded p-3 bg-light">
+                    <p class="mb-2"><strong>Question:</strong> {{ question.question_text }}</p>
+                    {% if question.question_type == 'mcq' and question.normalized_options %}
+                    <p class="mb-2"><strong>Options:</strong></p>
+                    <ul class="mb-2">
+                        {% for option in question.normalized_options %}
+                        <li>{{ option }}</li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                    <p class="mb-2"><strong>Correct Answer:</strong> {{ question.correct_answer }}</p>
+                    {% if question.explanation %}
+                    <p class="mb-0"><strong>Explanation:</strong> {{ question.explanation }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Show/hide options and keywords fields based on question type
+document.getElementById('question_type').addEventListener('change', function() {
+    const optionsContainer = document.getElementById('options-container');
+    const keywordsContainer = document.getElementById('keywords-container');
+    
+    if (this.value === 'mcq') {
+        optionsContainer.style.display = 'block';
+        keywordsContainer.style.display = 'none';
+    } else if (this.value === 'short_answer') {
+        optionsContainer.style.display = 'none';
+        keywordsContainer.style.display = 'block';
+    } else {
+        optionsContainer.style.display = 'none';
+        keywordsContainer.style.display = 'none';
+    }
+});
+
+// Trigger on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('question_type').dispatchEvent(new Event('change'));
+});
+</script>
+{% endblock %}

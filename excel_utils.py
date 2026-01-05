@@ -296,6 +296,67 @@ class StudentBulkImporter:
         return students
 
 
+class QuestionBulkImporter:
+    """Handle bulk import of questions from Excel"""
+    
+    def __init__(self, file_path):
+        """
+        Initialize with path to Excel file
+        
+        Args:
+            file_path: Path to the Excel file to import
+        """
+        self.file_path = file_path
+    
+    def import_questions(self, start_row=2):
+        """
+        Import questions from Excel file
+        
+        Args:
+            start_row: Row number where data starts (default 2, assumes row 1 is header)
+            
+        Returns:
+            List of dictionaries containing question data
+        """
+        wb = load_workbook(self.file_path, data_only=True)
+        ws = wb.active
+        
+        questions = []
+        
+        # Read data starting from start_row
+        for row in ws.iter_rows(min_row=start_row, values_only=True):
+            # Skip empty rows
+            if not any(row):
+                continue
+            
+            # Map columns to fields
+            question_data = {
+                'question_text': row[0],       # Column A
+                'question_type': row[1],       # Column B: mcq, true_false, short_answer
+                'option_a': row[2] if len(row) > 2 else None,      # Column C
+                'option_b': row[3] if len(row) > 3 else None,      # Column D
+                'option_c': row[4] if len(row) > 4 else None,      # Column E
+                'option_d': row[5] if len(row) > 5 else None,      # Column F
+                'correct_answer': row[6],     # Column G
+                'difficulty': row[7] if len(row) > 7 else 'medium', # Column H
+                'explanation': row[8] if len(row) > 8 else None    # Column I
+            }
+            
+            # Validate required fields
+            if question_data['question_text'] and question_data['question_type'] and question_data['correct_answer']:
+                # Process options based on type
+                if question_data['question_type'].lower() == 'mcq':
+                    question_data['options'] = [question_data['option_a'], question_data['option_b'], 
+                                              question_data['option_c'], question_data['option_d']]
+                else:
+                    question_data['options'] = None
+                
+                questions.append(question_data)
+        
+        wb.close()
+        return questions
+
+
 def create_default_template(output_path):
     """
     Create a default Excel template if none exists
@@ -420,6 +481,52 @@ def create_student_import_template(output_path):
     
     # Set column widths
     column_widths = [15, 15, 15, 15, 10, 15]
+    for idx, width in enumerate(column_widths):
+        ws.column_dimensions[chr(65 + idx)].width = width
+    
+    wb.save(output_path)
+    return output_path
+
+
+def create_question_import_template(output_path):
+    """
+    Create Excel template for bulk question import
+    
+    Args:
+        output_path: Where to save the template
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Question Import"
+    
+    # Header styling
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=12)
+    
+    # Headers
+    headers = ["Question Text", "Question Type", "Option A", "Option B", "Option C", "Option D", "Correct Answer", "Difficulty", "Explanation"]
+    
+    for idx, header in enumerate(headers):
+        cell = ws.cell(row=1, column=idx+1, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+    
+    # Sample data
+    sample_data = [
+        ["What is the capital of France?", "mcq", "Paris", "London", "Berlin", "Madrid", "A", "easy", "Paris is the capital and largest city of France."],
+        ["The Earth is round.", "true_false", "", "", "", "", "True", "easy", "Scientific evidence confirms the Earth is an oblate spheroid."],
+        ["What is 2 + 2?", "short_answer", "", "", "", "", "4", "easy", "Basic arithmetic: 2 + 2 = 4."]
+    ]
+    
+    for row_idx, row_data in enumerate(sample_data, start=2):
+        for col_idx, value in enumerate(row_data):
+            ws.cell(row=row_idx, column=col_idx+1, value=value)
+    
+    # Set column widths
+    column_widths = [40, 15, 15, 15, 15, 15, 15, 10, 30]
     for idx, width in enumerate(column_widths):
         ws.column_dimensions[chr(65 + idx)].width = width
     

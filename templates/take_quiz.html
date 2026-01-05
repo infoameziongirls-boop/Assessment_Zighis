@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Taking Quiz: {{ quiz.title }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4 class="mb-0">{{ quiz.title }}</h4>
+                        {% if quiz.description %}
+                        <small class="text-muted">{{ quiz.description }}</small>
+                        {% endif %}
+                    </div>
+                    <div class="text-end">
+                        <div class="fw-bold">{{ quiz.questions|length }} Questions</div>
+                        {% if quiz.time_limit %}
+                        <div id="timer" class="fw-bold text-danger" style="font-size: 1.2em;"></div>
+                        <small class="text-muted">{{ quiz.time_limit }} minutes</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <form method="POST" id="quizForm">
+                <div class="card-body">
+                    {% for question_id in quiz.questions %}
+                    {% set question = questions.get(question_id|int) %}
+                    {% if question %}
+                    <div class="question-item mb-4 p-3 border rounded">
+                        <h5 class="mb-3">Question {{ loop.index }}</h5>
+                        <p class="mb-3">{{ question.question_text }}</p>
+                        
+                        {% if question.question_type == 'mcq' and question.normalized_options %}
+                        <div class="row">
+                            {% for option in question.normalized_options %}
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" 
+                                           name="answer_{{ question.id }}" 
+                                           id="q{{ question.id }}_{{ loop.index0 }}" 
+                                           value="{{ option[0] }}" required>
+                                    <label class="form-check-label" for="q{{ question.id }}_{{ loop.index0 }}">
+                                        <span class="badge bg-light text-dark me-2">{{ 'ABCD'[loop.index0] }})</span>
+                                        {{ option }}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% elif question.question_type == 'true_false' %}
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" 
+                                   name="answer_{{ question.id }}" 
+                                   id="q{{ question.id }}_true" 
+                                   value="True" required>
+                            <label class="form-check-label" for="q{{ question.id }}_true">
+                                True
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" 
+                                   name="answer_{{ question.id }}" 
+                                   id="q{{ question.id }}_false" 
+                                   value="False" required>
+                            <label class="form-check-label" for="q{{ question.id }}_false">
+                                False
+                            </label>
+                        </div>
+                        {% else %}
+                        <input type="text" class="form-control" 
+                               name="answer_{{ question.id }}" 
+                               placeholder="Enter your answer..." 
+                               required autocomplete="off">
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                
+                <div class="card-footer text-center">
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="bi bi-check-circle"></i> Submit Quiz
+                    </button>
+                    <a href="{{ url_for('student_quizzes') }}" class="btn btn-outline-secondary ms-2">
+                        <i class="bi bi-arrow-left"></i> Cancel
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+// Quiz Timer
+{% if quiz.time_limit %}
+let timeLeft = {{ quiz.time_limit }} * 60; // Convert minutes to seconds
+const timerElement = document.getElementById('timer');
+
+function updateTimer() {
+    const minutes = Math.floor(timeLeft / 60);
+    const seconds = timeLeft % 60;
+    timerElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    
+    if (timeLeft <= 300) { // 5 minutes warning
+        timerElement.classList.add('text-warning');
+    }
+    if (timeLeft <= 60) { // 1 minute warning
+        timerElement.classList.remove('text-warning');
+        timerElement.classList.add('text-danger', 'fw-bold');
+    }
+    
+    if (timeLeft <= 0) {
+        alert('Time is up! Your quiz will be submitted automatically.');
+        document.getElementById('quizForm').submit();
+        return;
+    }
+    timeLeft--;
+}
+
+updateTimer(); // Initial display
+const timerInterval = setInterval(updateTimer, 1000);
+
+// Clear timer when form is submitted
+document.getElementById('quizForm').addEventListener('submit', function() {
+    clearInterval(timerInterval);
+});
+{% endif %}
+
+// Add form validation
+document.getElementById('quizForm').addEventListener('submit', function(e) {
+    const questions = {{ quiz.questions|length }};
+    const questionIds = {{ quiz.questions|tojson }};
+    let answered = 0;
+    
+    for (let i = 0; i < questions; i++) {
+        const questionId = questionIds[i];
+        const answer = document.querySelector(`input[name="answer_${questionId}"]:checked`) || 
+                      document.querySelector(`input[name="answer_${questionId}"][type="text"]`);
+        if (answer && answer.value.trim()) {
+            answered++;
+        }
+    }
+    
+    if (answered < questions) {
+        if (!confirm(`You have answered ${answered} out of ${questions} questions. Are you sure you want to submit?`)) {
+            e.preventDefault();
+        }
+    }
+});
+</script>
+{% endblock %}

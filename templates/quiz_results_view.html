@@ -32,6 +32,7 @@
                                 <tr>
                                     <th>Student</th>
                                     <th>Class</th>
+                                    <th>Learning Area</th>
                                     <th>Score</th>
                                     <th>Percentage</th>
                                     <th>Time Taken</th>
@@ -54,6 +55,13 @@
                                     <td>
                                         {% if student %}
                                             {{ student.class_name or 'N/A' }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if student %}
+                                            {{ student.study_area or 'N/A' }}
                                         {% else %}
                                             N/A
                                         {% endif %}

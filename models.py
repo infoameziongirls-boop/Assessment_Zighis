@@ -375,6 +375,8 @@ class Question(db.Model):
     question_type = db.Column(db.String(20), nullable=False, default="mcq")  # mcq, true_false, short_answer
     options = db.Column(db.JSON, nullable=True)  # For MCQ: ["A", "B", "C", "D"]
     correct_answer = db.Column(db.String(500), nullable=False)  # For MCQ: "A", for true_false: "True"/"False", for short_answer: the answer
+    marks = db.Column(db.Float, nullable=False, default=1.0)  # Marks for the question
+    keywords = db.Column(db.JSON, nullable=True)  # For short_answer: list of keywords for flexible marking
     difficulty = db.Column(db.String(20), nullable=False, default="medium")  # easy, medium, hard
     explanation = db.Column(db.Text, nullable=True)  # Optional explanation for the answer
     created_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
@@ -407,6 +409,18 @@ class Question(db.Model):
         """Return formatted subject name"""
         return self.subject.replace('_', ' ').title()
     
+    @property
+    def normalized_options(self):
+        """Return options as a list, handling legacy string format"""
+        if not self.options:
+            return []
+        if isinstance(self.options, list):
+            return self.options
+        if isinstance(self.options, str):
+            # Split by newlines and filter empty lines
+            return [line.strip() for line in self.options.split('\n') if line.strip()]
+        return []
+    
     def __repr__(self):
         return f"<Question {self.id} - {self.subject}: {self.question_text[:50]}...>"
 
@@ -419,6 +433,7 @@ class QuestionAttempt(db.Model):
     question_id = db.Column(db.Integer, db.ForeignKey("questions.id"), nullable=False)
     student_answer = db.Column(db.String(500), nullable=False)
     is_correct = db.Column(db.Boolean, nullable=False)
+    score = db.Column(db.Float, nullable=False, default=0.0)
     attempted_at = db.Column(db.DateTime, default=datetime.utcnow)
     time_taken = db.Column(db.Integer, nullable=True)  # Time in seconds
     

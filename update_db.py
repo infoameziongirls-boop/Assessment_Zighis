@@ -50,6 +50,26 @@ def update_database():
             if 'reference_number' not in student_columns:
                 print("Adding 'reference_number' column to students table...")
                 db.engine.execute('ALTER TABLE students ADD COLUMN reference_number VARCHAR(50)')
+            
+            # Check columns in questions table
+            question_columns = [col['name'] for col in inspector.get_columns('questions')]
+            print("Current question columns:", question_columns)
+            
+            if 'marks' not in question_columns:
+                print("Adding 'marks' column to questions table...")
+                db.engine.execute('ALTER TABLE questions ADD COLUMN marks FLOAT DEFAULT 1.0')
+            
+            if 'keywords' not in question_columns:
+                print("Adding 'keywords' column to questions table...")
+                db.engine.execute('ALTER TABLE questions ADD COLUMN keywords TEXT')
+            
+            # Check columns in question_attempts table
+            attempt_columns = [col['name'] for col in inspector.get_columns('question_attempts')]
+            print("Current question_attempt columns:", attempt_columns)
+            
+            if 'score' not in attempt_columns:
+                print("Adding 'score' column to question_attempts table...")
+                db.engine.execute('ALTER TABLE question_attempts ADD COLUMN score FLOAT DEFAULT 0.0')
                 # Create index
                 db.engine.execute('CREATE INDEX IF NOT EXISTS ix_students_reference_number ON students (reference_number)')
             

@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}Quiz Review - {{ quiz.title }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <!-- Quiz Info Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <h3 class="mb-1">{{ quiz.title }}</h3>
+                            <p class="text-muted mb-1">
+                                <i class="bi bi-book"></i> Subject: {{ quiz.subject.replace('_', ' ')|title }} |
+                                <i class="bi bi-hash"></i> Questions: {{ quiz.questions|length }} |
+                                <i class="bi bi-clock"></i> Completed: {{ attempt.completed_at.strftime('%Y-%m-%d %H:%M') if attempt.completed_at else 'N/A' }}
+                            </p>
+                            {% if quiz.description %}
+                            <p class="mb-0">{{ quiz.description }}</p>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 text-end">
+                            <div class="mb-2">
+                                <span class="badge fs-6
+                                    {% if attempt.get_percentage() >= 80 %}bg-success
+                                    {% elif attempt.get_percentage() >= 60 %}bg-warning
+                                    {% else %}bg-danger{% endif %}">
+                                    {{ "%.1f"|format(attempt.get_percentage()) }}%
+                                </span>
+                            </div>
+                            <p class="mb-1">Score: {{ attempt.correct_answers }}/{{ attempt.total_questions }}</p>
+                            <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left"></i> Back to Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Questions Review -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-check-circle"></i> Question Review
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% for q_id in quiz.questions %}
+                    {% set question = questions.get(q_id) %}
+                    {% set q_attempt = question_attempts.get(q_id) %}
+                    {% if question %}
+                    <div class="question-review mb-4 p-3 border rounded">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="mb-0">
+                                Question {{ loop.index }}
+                                {% if q_attempt and q_attempt.is_correct %}
+                                <span class="badge bg-success ms-2">
+                                    <i class="bi bi-check-circle"></i> Correct
+                                </span>
+                                {% elif q_attempt %}
+                                <span class="badge bg-danger ms-2">
+                                    <i class="bi bi-x-circle"></i> Incorrect
+                                </span>
+                                {% else %}
+                                <span class="badge bg-secondary ms-2">
+                                    <i class="bi bi-question-circle"></i> Not Attempted
+                                </span>
+                                {% endif %}
+                            </h6>
+                            <span class="badge bg-primary">{{ question.marks }} mark{{ 's' if question.marks != 1 else '' }}</span>
+                        </div>
+
+                        <div class="question-text mb-3">
+                            <strong>Question:</strong>
+                            <div class="mt-1">{{ question.question_text|safe }}</div>
+                        </div>
+
+                        {% if question.question_type == 'mcq' %}
+                        <div class="options mb-3">
+                            <strong>Options:</strong>
+                            <div class="mt-1">
+                                {% for option in question.options %}
+                                <div class="option {% if option == question.correct_answer %}text-success fw-bold{% elif q_attempt and option == q_attempt.student_answer %}text-danger{% endif %}">
+                                    {% if option == question.correct_answer %}
+                                    <i class="bi bi-check-circle"></i>
+                                    {% elif q_attempt and option == q_attempt.student_answer %}
+                                    <i class="bi bi-x-circle"></i>
+                                    {% endif %}
+                                    {{ option }}
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% elif question.question_type == 'true_false' %}
+                        <div class="options mb-3">
+                            <strong>Options:</strong>
+                            <div class="mt-1">
+                                <div class="option {% if 'True' == question.correct_answer %}text-success fw-bold{% elif q_attempt and 'True' == q_attempt.student_answer %}text-danger{% endif %}">
+                                    {% if 'True' == question.correct_answer %}
+                                    <i class="bi bi-check-circle"></i>
+                                    {% elif q_attempt and 'True' == q_attempt.student_answer %}
+                                    <i class="bi bi-x-circle"></i>
+                                    {% endif %}
+                                    True
+                                </div>
+                                <div class="option {% if 'False' == question.correct_answer %}text-success fw-bold{% elif q_attempt and 'False' == q_attempt.student_answer %}text-danger{% endif %}">
+                                    {% if 'False' == question.correct_answer %}
+                                    <i class="bi bi-check-circle"></i>
+                                    {% elif q_attempt and 'False' == q_attempt.student_answer %}
+                                    <i class="bi bi-x-circle"></i>
+                                    {% endif %}
+                                    False
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="your-answer mb-2">
+                            <strong>Your Answer:</strong>
+                            <span class="{% if q_attempt and q_attempt.is_correct %}text-success{% elif q_attempt %}text-danger{% else %}text-muted{% endif %}">
+                                {% if q_attempt %}
+                                {{ q_attempt.student_answer }}
+                                {% else %}
+                                Not answered
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div class="correct-answer mb-2">
+                            <strong>Correct Answer:</strong>
+                            <span class="text-success fw-bold">{{ question.correct_answer }}</span>
+                        </div>
+
+                        {% if question.explanation %}
+                        <div class="explanation">
+                            <strong>Explanation:</strong>
+                            <div class="mt-1 text-muted">{{ question.explanation|safe }}</div>
+                        </div>
+                        {% endif %}
+
+                        <div class="score mt-2">
+                            <strong>Score:</strong>
+                            {% if q_attempt %}
+                            <span class="{% if q_attempt.score == question.marks %}text-success{% else %}text-danger{% endif %}">
+                                {{ q_attempt.score }}/{{ question.marks }}
+                            </span>
+                            {% else %}
+                            <span class="text-muted">0/{{ question.marks }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.question-review {
+    background-color: #f8f9fa;
+}
+
+.question-review.correct {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+
+.question-review.incorrect {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+}
+
+.option {
+    padding: 2px 0;
+}
+
+.option i {
+    margin-right: 5px;
+}
+</style>
+{% endblock %}

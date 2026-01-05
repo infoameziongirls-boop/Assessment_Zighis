@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(__file__))
 
 from app import app, db, bcrypt
-from models import User, Student, Assessment, Setting
+from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt
 
 def migrate_database():
     with app.app_context():

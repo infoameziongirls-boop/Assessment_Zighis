@@ -24,6 +24,36 @@ from config import config
 from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt, init_db
 from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, create_default_template, create_student_import_template, create_question_import_template
 
+def calculate_short_answer_score(student_answer, question):
+    """Calculate score for short answer questions based on keywords"""
+    if not question.keywords or not isinstance(question.keywords, list):
+        # Fall back to exact match if no keywords
+        return question.marks if student_answer.strip().lower() == question.correct_answer.strip().lower() else 0.0
+    
+    student_answer_lower = student_answer.lower().strip()
+    keyword_matches = 0
+    
+    for keyword in question.keywords:
+        keyword = keyword.lower().strip()
+        if keyword in student_answer_lower:
+            keyword_matches += 1
+    
+    total_keywords = len(question.keywords)
+    if total_keywords == 0:
+        return 0.0
+    
+    match_percentage = keyword_matches / total_keywords
+    
+    # 85% or more keywords = full marks
+    if match_percentage >= 0.85:
+        return question.marks
+    # 50% or more keywords = half marks
+    elif match_percentage >= 0.50:
+        return question.marks * 0.5
+    # Less than 50% = 0 marks
+    else:
+        return 0.0
+
 # -------------------------
 # Application Factory
 # -------------------------
@@ -171,7 +201,10 @@ class QuestionForm(FlaskForm):
     options = TextAreaField("Options (for MCQ only)", validators=[Optional()], 
                           render_kw={"placeholder": "Enter options one per line (A, B, C, D)"})
     correct_answer = StringField("Correct Answer", validators=[InputRequired()], 
-                               render_kw={"placeholder": "For MCQ: A, B, C, or D. For True/False: True or False"})
+                               render_kw={"placeholder": "For MCQ: A, B, C, or D. For True/False: True or False. For Short Answer: the expected answer"})
+    marks = FloatField("Marks", validators=[InputRequired(), NumberRange(min=0.1, max=100)], default=1.0)
+    keywords = TextAreaField("Keywords (for Short Answer only)", validators=[Optional()], 
+                           render_kw={"placeholder": "Enter keywords one per line for flexible marking"})
     difficulty = SelectField("Difficulty", choices=[
         ('easy', 'Easy'),
         ('medium', 'Medium'),
@@ -366,6 +399,16 @@ def student_dashboard():
     subjects = sorted(set([a.subject for a in student.assessments if a.subject]))
     classes = sorted(set([a.class_name for a in student.assessments if a.class_name]))
     
+    # Get quiz attempts for this student
+    quiz_attempts = QuizAttempt.query.filter_by(student_id=student.id).order_by(QuizAttempt.completed_at.desc()).all()
+    
+    # Get quiz details for each attempt
+    quiz_details = {}
+    for attempt in quiz_attempts:
+        quiz = Quiz.query.get(attempt.quiz_id)
+        if quiz:
+            quiz_details[attempt.id] = quiz
+    
     # Calculate summary
     summary = student.get_assessment_summary()
     final_percent = student.calculate_final_grade()
@@ -401,7 +444,9 @@ def student_dashboard():
         classes=classes,
         selected_subject=subject,
         selected_class=class_filter,
-        category_labels=app.config['CATEGORY_LABELS']
+        category_labels=app.config['CATEGORY_LABELS'],
+        quiz_attempts=quiz_attempts,
+        quiz_details=quiz_details
     )
 
 # -------------------------
@@ -1212,12 +1257,24 @@ def create_question():
     form = QuestionForm()
     
     if form.validate_on_submit():
+        # Process options for MCQ
+        options = None
+        if form.question_type.data == 'mcq' and form.options.data:
+            options = [line.strip() for line in form.options.data.split('\n') if line.strip()]
+        
+        # Process keywords for short answer
+        keywords = None
+        if form.question_type.data == 'short_answer' and form.keywords.data:
+            keywords = [line.strip().lower() for line in form.keywords.data.split('\n') if line.strip()]
+        
         question = Question(
             subject=current_user.subject,
             question_text=form.question_text.data,
             question_type=form.question_type.data,
-            options=form.options.data if form.options.data else None,
+            options=options,
             correct_answer=form.correct_answer.data,
+            marks=form.marks.data,
+            keywords=keywords,
             difficulty=form.difficulty.data,
             explanation=form.explanation.data,
             created_by=current_user.id
@@ -1247,11 +1304,31 @@ def edit_question(question_id):
     
     form = QuestionForm(obj=question)
     
+    # Convert options list to string for the textarea
+    if question.options and isinstance(question.options, list):
+        form.options.data = '\n'.join(question.options)
+    
+    # Convert keywords list to string for the textarea
+    if question.keywords and isinstance(question.keywords, list):
+        form.keywords.data = '\n'.join(question.keywords)
+    
     if form.validate_on_submit():
+        # Process options for MCQ
+        options = None
+        if form.question_type.data == 'mcq' and form.options.data:
+            options = [line.strip() for line in form.options.data.split('\n') if line.strip()]
+        
+        # Process keywords for short answer
+        keywords = None
+        if form.question_type.data == 'short_answer' and form.keywords.data:
+            keywords = [line.strip().lower() for line in form.keywords.data.split('\n') if line.strip()]
+        
         question.question_text = form.question_text.data
         question.question_type = form.question_type.data
-        question.options = form.options.data if form.options.data else None
+        question.options = options
         question.correct_answer = form.correct_answer.data
+        question.marks = form.marks.data
+        question.keywords = keywords
         question.difficulty = form.difficulty.data
         question.explanation = form.explanation.data
         question.updated_at = datetime.utcnow()
@@ -1342,6 +1419,29 @@ def approve_question(question_id):
     # Log activity
     log_activity(current_user, "moderate_question", f"{action}d question ID {question.id}")
     
+    return redirect(url_for("admin_question_bank"))
+
+
+@app.route("/admin/questions/approve_all", methods=["POST"])
+@login_required
+@admin_required
+def approve_all_questions():
+    """Admin can approve all pending questions"""
+    # Get all pending questions
+    pending_questions = Question.query.filter_by(status='pending').all()
+    
+    approved_count = 0
+    for question in pending_questions:
+        question.status = 'approved'
+        question.approved_by = current_user.id
+        approved_count += 1
+    
+    db.session.commit()
+    
+    # Log activity
+    log_activity(current_user, "approve_all_questions", f"Approved {approved_count} pending questions")
+    
+    flash(f"Approved {approved_count} questions successfully", "success")
     return redirect(url_for("admin_question_bank"))
 
 
@@ -1468,11 +1568,24 @@ def create_quiz():
     # Set subject choices based on user role
     if current_user.is_admin():
         # Admin can choose any subject
-        form.subject.choices = [(subject, subject.replace('_', ' ').title()) for subject in app.config['LEARNING_AREAS']]
+        form.subject.choices = [(subject[0], subject[1]) for subject in app.config['LEARNING_AREAS']]
     else:
         # Teachers are limited to their subject
         form.subject.choices = [(current_user.subject, current_user.subject.replace('_', ' ').title())]
         form.subject.data = current_user.subject
+    
+    # Set questions choices based on subject
+    subject = None
+    if request.method == 'POST':
+        subject = request.form.get('subject', current_user.subject if current_user.is_teacher() else None)
+    else:
+        subject = request.args.get('subject', current_user.subject if current_user.is_teacher() else None)
+    
+    if subject:
+        questions = Question.query.filter_by(subject=subject, status='approved').all()
+        form.questions.choices = [(str(q.id), f"{q.question_text[:50]}{'...' if len(q.question_text) > 50 else ''} ({q.difficulty.title()}, {q.question_type.upper()})") for q in questions]
+    else:
+        form.questions.choices = []
     
     if form.validate_on_submit():
         # Get approved questions for the selected subject
@@ -1500,14 +1613,10 @@ def create_quiz():
         return redirect(url_for("teacher_quizzes"))
     
     # For GET request, populate questions based on subject
-    subject = request.args.get('subject', current_user.subject if current_user.is_teacher() else None)
-    if subject:
-        questions = Question.query.filter_by(subject=subject, status='approved').all()
-        form.subject.data = subject
-    else:
+    if not subject:
         questions = []
-    
-    form.questions.choices = [(str(q.id), f"{q.question_text[:50]}{'...' if len(q.question_text) > 50 else ''} ({q.difficulty.title()}, {q.question_type.upper()})") for q in questions]
+    else:
+        questions = Question.query.filter_by(subject=subject, status='approved').all()
     
     return render_template("quiz_form.html", form=form, available_questions=questions, quiz=None)
 
@@ -1537,8 +1646,14 @@ def take_quiz(quiz_id):
     if not quiz.is_active:
         abort(404)
     
+    # Get student record
+    student = Student.query.filter_by(student_number=current_user.username).first()
+    if not student:
+        flash("Student record not found", "danger")
+        return redirect(url_for("student_dashboard"))
+    
     # Check if student already attempted this quiz
-    existing_attempt = QuizAttempt.query.filter_by(student_id=current_user.id, quiz_id=quiz_id).first()
+    existing_attempt = QuizAttempt.query.filter_by(student_id=student.id, quiz_id=quiz_id).first()
     if existing_attempt:
         flash("You have already taken this quiz", "warning")
         return redirect(url_for("student_quizzes"))
@@ -1549,7 +1664,8 @@ def take_quiz(quiz_id):
     if request.method == 'POST':
         # Process quiz submission
         answers = {}
-        correct_count = 0
+        total_score = 0.0
+        total_marks = 0.0
         question_results = {}
         
         for qid in quiz.questions:
@@ -1557,56 +1673,63 @@ def take_quiz(quiz_id):
             if answer:
                 question = questions_dict.get(int(qid))
                 if question:
+                    score = 0.0
                     is_correct = False
                     if question.question_type == 'mcq':
                         is_correct = answer.strip().upper() == question.correct_answer.strip().upper()
+                        score = question.marks if is_correct else 0.0
                     elif question.question_type == 'true_false':
                         is_correct = answer.lower() == question.correct_answer.lower()
-                    else:
-                        is_correct = answer.strip().lower() == question.correct_answer.strip().lower()
+                        score = question.marks if is_correct else 0.0
+                    elif question.question_type == 'short_answer':
+                        # Flexible marking for short answer questions
+                        score = calculate_short_answer_score(answer, question)
+                        is_correct = score == question.marks  # Full marks = correct
                     
-                    if is_correct:
-                        correct_count += 1
+                    total_score += score
+                    total_marks += question.marks
                     
                     # Store question result for display
                     question_results[qid] = {
                         'student_answer': answer,
-                        'is_correct': is_correct,
+                        'score': score,
+                        'max_marks': question.marks,
                         'correct_answer': question.correct_answer
                     }
                     
                     # Record individual question attempt
                     attempt = QuestionAttempt(
-                        student_id=current_user.id,
+                        student_id=student.id,
                         question_id=qid,
                         student_answer=answer,
-                        is_correct=is_correct
+                        is_correct=is_correct,
+                        score=score
                     )
                     db.session.add(attempt)
         
         # Record quiz attempt
         quiz_attempt = QuizAttempt(
-            student_id=current_user.id,
+            student_id=student.id,
             quiz_id=quiz_id,
-            score=correct_count,
+            score=total_score,
             total_questions=len(quiz.questions),
-            correct_answers=correct_count,
+            correct_answers=sum(1 for result in question_results.values() if result['score'] == result['max_marks']),
             completed_at=datetime.utcnow()
         )
         db.session.add(quiz_attempt)
         db.session.commit()
         
         # Log activity
-        log_activity(current_user, "complete_quiz", f"Completed quiz '{quiz.title}' with score {correct_count}/{len(quiz.questions)}")
+        log_activity(current_user, "complete_quiz", f"Completed quiz '{quiz.title}' with score {total_score:.1f}/{total_marks:.1f}")
         
         # Store quiz results temporarily in session (expires in 2 hours)
         import time
         session['quiz_results'] = {
             'quiz_id': quiz_id,
             'quiz_title': quiz.title,
-            'score': correct_count,
-            'total_questions': len(quiz.questions),
-            'percentage': round((correct_count / len(quiz.questions)) * 100, 1) if len(quiz.questions) > 0 else 0,
+            'score': total_score,
+            'total_marks': total_marks,
+            'percentage': round((total_score / total_marks) * 100, 1) if total_marks > 0 else 0,
             'completed_at': datetime.utcnow().timestamp(),
             'question_results': question_results  # Store individual question results
         }
@@ -1652,6 +1775,73 @@ def quiz_results():
                          questions=questions)
 
 
+@app.route("/student/quiz-attempt/<int:attempt_id>/review")
+@login_required
+@student_required
+def quiz_attempt_review(attempt_id):
+    """Review a specific quiz attempt with detailed question breakdown"""
+    # Get student record
+    student = Student.query.filter_by(student_number=current_user.username).first()
+    if not student:
+        flash("Student record not found", "danger")
+        return redirect(url_for("student_dashboard"))
+    
+    # Get the quiz attempt
+    attempt = QuizAttempt.query.filter_by(id=attempt_id, student_id=student.id).first()
+    if not attempt:
+        flash("Quiz attempt not found", "danger")
+        return redirect(url_for("student_dashboard"))
+    
+    # Get quiz details
+    quiz = Quiz.query.get(attempt.quiz_id)
+    if not quiz:
+        flash("Quiz not found", "danger")
+        return redirect(url_for("student_dashboard"))
+    
+    # Get questions
+    questions = {}
+    for q_id in quiz.questions:
+        question = Question.query.get(q_id)
+        if question:
+            questions[q_id] = question
+    
+    # Get question attempts for this quiz attempt
+    # Since QuestionAttempt doesn't link to QuizAttempt, we get attempts around the completion time
+    if attempt.completed_at:
+        # Get attempts within 5 minutes of completion
+        time_window_start = attempt.completed_at.replace(second=0, microsecond=0)  # Round down to minute
+        time_window_end = time_window_start.replace(minute=time_window_start.minute + 5)
+        
+        question_attempts = QuestionAttempt.query.filter(
+            QuestionAttempt.student_id == student.id,
+            QuestionAttempt.question_id.in_(quiz.questions),
+            QuestionAttempt.attempted_at >= time_window_start,
+            QuestionAttempt.attempted_at <= time_window_end
+        ).all()
+    else:
+        # Fallback: get the most recent attempts for these questions
+        question_attempts = []
+        for q_id in quiz.questions:
+            latest_attempt = QuestionAttempt.query.filter_by(
+                student_id=student.id,
+                question_id=q_id
+            ).order_by(QuestionAttempt.attempted_at.desc()).first()
+            if latest_attempt:
+                question_attempts.append(latest_attempt)
+    
+    # Group question attempts by question_id (take the latest attempt for each question)
+    latest_attempts = {}
+    for qa in question_attempts:
+        if qa.question_id not in latest_attempts or qa.attempted_at > latest_attempts[qa.question_id].attempted_at:
+            latest_attempts[qa.question_id] = qa
+    
+    return render_template("quiz_attempt_review.html",
+                         attempt=attempt,
+                         quiz=quiz,
+                         questions=questions,
+                         question_attempts=latest_attempts)
+
+
 @app.route("/teacher/quizzes/<int:quiz_id>")
 @login_required
 def quiz_detail(quiz_id):
@@ -1693,7 +1883,7 @@ def edit_quiz(quiz_id):
     # Set subject choices based on user role
     if current_user.is_admin():
         # Admin can choose any subject
-        form.subject.choices = [(subject, subject.replace('_', ' ').title()) for subject in app.config['LEARNING_AREAS']]
+        form.subject.choices = [(subject[0], subject[1]) for subject in app.config['LEARNING_AREAS']]
     else:
         # Teachers are limited to their subject
         form.subject.choices = [(current_user.subject, current_user.subject.replace('_', ' ').title())]
@@ -1796,19 +1986,37 @@ def quiz_results_view(quiz_id):
     student_ids = [attempt.student_id for attempt in attempts]
     students = {student.id: student for student in Student.query.filter(Student.id.in_(student_ids)).all()}
     
+    # For any missing students (old data with User.id), try to find by student_number and map them
+    missing_ids = [sid for sid in student_ids if sid not in students]
+    if missing_ids:
+        users = User.query.filter(User.id.in_(missing_ids)).all()
+        user_dict = {user.id: user for user in users}
+        for user_id in missing_ids:
+            user = user_dict.get(user_id)
+            if user:
+                student = Student.query.filter_by(student_number=user.username).first()
+                if student:
+                    students[user_id] = student  # Map old User.id to Student object
+    
     return render_template("quiz_results_view.html", quiz=quiz, attempts=attempts, students=students, summary_stats=summary_stats)
 
 
 @app.route("/teacher/quiz-results")
 @login_required
 def teacher_quiz_results():
-    """Teacher can view all quiz results for their subject, Admin can view all"""
+    """Teacher can view all quiz results for their subject, Admin can view all or filter by subject"""
     if not (current_user.is_teacher() or current_user.is_admin()):
         abort(403)
     
-    # Get quizzes based on permissions
+    # Get subject filter
+    subject_filter = request.args.get("subject", "")
+    
+    # Get quizzes based on permissions and filter
     if current_user.is_admin():
-        quizzes = Quiz.query.order_by(Quiz.created_at.desc()).all()
+        query = Quiz.query
+        if subject_filter:
+            query = query.filter_by(subject=subject_filter)
+        quizzes = query.order_by(Quiz.created_at.desc()).all()
     else:
         quizzes = Quiz.query.filter_by(subject=current_user.subject).order_by(Quiz.created_at.desc()).all()
     
@@ -1850,8 +2058,28 @@ def teacher_quiz_results():
     student_ids = list(set(attempt.student_id for attempt in attempts))
     students = {student.id: student for student in Student.query.filter(Student.id.in_(student_ids)).all()}
     
-    return render_template("teacher_quiz_results.html", quizzes=quizzes, attempts_by_quiz=attempts_by_quiz, 
-                         students=students, quiz_summaries=quiz_summaries)
+    # For any missing students (old data with User.id), try to find by student_number and map them
+    missing_ids = [sid for sid in student_ids if sid not in students]
+    if missing_ids:
+        users = User.query.filter(User.id.in_(missing_ids)).all()
+        user_dict = {user.id: user for user in users}
+        for user_id in missing_ids:
+            user = user_dict.get(user_id)
+            if user:
+                student = Student.query.filter_by(student_number=user.username).first()
+                if student:
+                    students[user_id] = student  # Map old User.id to Student object
+    
+    # Get all subjects for filter dropdown
+    all_subjects = app.config['LEARNING_AREAS']
+    
+    return render_template("teacher_quiz_results.html", 
+                         quizzes=quizzes, 
+                         attempts_by_quiz=attempts_by_quiz, 
+                         students=students, 
+                         quiz_summaries=quiz_summaries,
+                         all_subjects=all_subjects,
+                         subject_filter=subject_filter)
 
 
 @app.route("/admin/archive-term", methods=["POST"])
