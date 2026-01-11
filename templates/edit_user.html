@@ -22,8 +22,21 @@
                     </div>
                     
                     <div class="mb-3">
-                        {{ form.class_name.label(class="form-label") }}
-                        {{ form.class_name(class="form-control") }}
+                        {{ form.classes.label(class="form-label") }}
+                        <div class="row g-2">
+                            {% for val, label in config.CLASS_LEVELS %}
+                            <div class="col-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="{{ form.classes.name }}" id="edit_classes_{{ loop.index }}" value="{{ val }}"
+                                    {% if form.classes.data and val in form.classes.data %}checked{% endif %}>
+                                    <label class="form-check-label" for="edit_classes_{{ loop.index }}">{{ label }}</label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <small class="text-muted d-block mt-2">
+                            <i class="bi bi-info-circle"></i> Select one or more classes
+                        </small>
                     </div>
                     
                     <div class="d-flex justify-content-between">

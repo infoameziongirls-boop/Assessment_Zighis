@@ -39,7 +39,8 @@
                                     <input class="form-check-input" type="radio" 
                                            name="answer_{{ question.id }}" 
                                            id="q{{ question.id }}_{{ loop.index0 }}" 
-                                           value="{{ option[0] }}" required>
+                                           value="{{ option[0] }}" 
+                                           {% if saved_answers.get(question.id|string) == option[0] %}checked{% endif %} required>
                                     <label class="form-check-label" for="q{{ question.id }}_{{ loop.index0 }}">
                                         <span class="badge bg-light text-dark me-2">{{ 'ABCD'[loop.index0] }})</span>
                                         {{ option }}
@@ -53,7 +54,8 @@
                             <input class="form-check-input" type="radio" 
                                    name="answer_{{ question.id }}" 
                                    id="q{{ question.id }}_true" 
-                                   value="True" required>
+                                   value="True" 
+                                   {% if saved_answers.get(question.id|string) == 'True' %}checked{% endif %} required>
                             <label class="form-check-label" for="q{{ question.id }}_true">
                                 True
                             </label>
@@ -62,7 +64,8 @@
                             <input class="form-check-input" type="radio" 
                                    name="answer_{{ question.id }}" 
                                    id="q{{ question.id }}_false" 
-                                   value="False" required>
+                                   value="False" 
+                                   {% if saved_answers.get(question.id|string) == 'False' %}checked{% endif %} required>
                             <label class="form-check-label" for="q{{ question.id }}_false">
                                 False
                             </label>
@@ -71,6 +74,7 @@
                         <input type="text" class="form-control" 
                                name="answer_{{ question.id }}" 
                                placeholder="Enter your answer..." 
+                               value="{{ saved_answers.get(question.id|string, '') }}" 
                                required autocomplete="off">
                         {% endif %}
                     </div>
@@ -94,7 +98,7 @@
 <script>
 // Quiz Timer
 {% if quiz.time_limit %}
-let timeLeft = {{ quiz.time_limit }} * 60; // Convert minutes to seconds
+let timeLeft = {{ attempt.remaining_time or (quiz.time_limit * 60) }}; // Use saved remaining time or full time
 const timerElement = document.getElementById('timer');
 
 function updateTimer() {
@@ -121,9 +125,34 @@ function updateTimer() {
 updateTimer(); // Initial display
 const timerInterval = setInterval(updateTimer, 1000);
 
+// Auto-save progress every 10 seconds
+setInterval(function() {
+    saveProgress();
+}, 10000);
+
+function saveProgress() {
+    const formData = new FormData(document.getElementById('quizForm'));
+    formData.append('remaining_time', timeLeft);
+    
+    fetch('/student/quizzes/{{ quiz.id }}/save_progress', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    }).then(response => response.json()).then(data => {
+        if (data.success) {
+            console.log('Progress saved');
+        }
+    }).catch(error => {
+        console.log('Save failed, will retry');
+    });
+}
+
 // Clear timer when form is submitted
 document.getElementById('quizForm').addEventListener('submit', function() {
     clearInterval(timerInterval);
+    saveProgress(); // Final save
 });
 {% endif %}
 

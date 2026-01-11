@@ -1,6 +1,7 @@
 from datetime import datetime
 from db import db
 from flask_login import UserMixin
+import json
 
 class SubjectArea:
     """Helper class to categorize subjects"""
@@ -30,6 +31,7 @@ class User(UserMixin, db.Model):
     role = db.Column(db.String(20), default="teacher")
     subject = db.Column(db.String(100), nullable=True)
     class_name = db.Column(db.String(50), nullable=True)
+    classes = db.Column(db.Text, nullable=True)  # JSON string of multiple classes for teachers
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     # Relationships
@@ -39,6 +41,25 @@ class User(UserMixin, db.Model):
         foreign_keys="Assessment.teacher_id",
         lazy=True
     )
+    
+    def get_classes_list(self):
+        """Get list of classes assigned to this teacher"""
+        if self.classes:
+            try:
+                return json.loads(self.classes)
+            except json.JSONDecodeError:
+                return []
+        # Fallback to old single class_name field for backward compatibility
+        elif self.class_name:
+            return [self.class_name]
+        return []
+    
+    def set_classes_list(self, classes_list):
+        """Set list of classes for this teacher"""
+        if classes_list and isinstance(classes_list, list):
+            self.classes = json.dumps(classes_list)
+        else:
+            self.classes = None
     
     def check_password(self, password, bcrypt):
         return bcrypt.check_password_hash(self.password_hash, password)
@@ -139,10 +160,12 @@ class Student(UserMixin, db.Model):
             return f"{self.first_name} {self.middle_name} {self.last_name}"
         return f"{self.first_name} {self.last_name}"
     
-    def get_assessment_summary(self, subject=None):
+    def get_assessment_summary(self, subject=None, teacher_id=None):
         assessments = self.assessments
         if subject:
             assessments = [a for a in assessments if a.subject == subject]
+        if teacher_id:
+            assessments = [a for a in assessments if a.teacher_id == teacher_id]
         
         summary = {}
         for assessment in assessments:
@@ -164,10 +187,14 @@ class Student(UserMixin, db.Model):
         
         return summary
     
-    def get_subject_summary(self):
+    def get_subject_summary(self, teacher_id=None):
         """Get summary by subject"""
+        assessments = self.assessments
+        if teacher_id:
+            assessments = [a for a in assessments if a.teacher_id == teacher_id]
+            
         summary = {}
-        for assessment in self.assessments:
+        for assessment in assessments:
             subject = assessment.subject
             if subject not in summary:
                 summary[subject] = {
@@ -188,9 +215,9 @@ class Student(UserMixin, db.Model):
         
         return summary
     
-    def calculate_final_grade(self, weights=None, subject=None):
+    def calculate_final_grade(self, weights=None, subject=None, teacher_id=None):
         """Calculate final grade using raw scores to match Excel template calculation"""
-        summary = self.get_assessment_summary(subject)
+        summary = self.get_assessment_summary(subject, teacher_id)
         
         # Template calculation logic - use raw scores directly
         # Class assessments: ica1, ica2, icp1, icp2, gp1, gp2, practical, mid_term
@@ -230,7 +257,7 @@ class Student(UserMixin, db.Model):
         if final_percent is None:
             return {"gpa": "N/A", "grade": "N/A"}
         
-        # GPA calculation matching template
+        # GPA calculation matching Excel sheet grading scale
         if final_percent >= 80:
             gpa = "4.0"
             grade = "A1"
@@ -481,6 +508,9 @@ class QuizAttempt(db.Model):
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
     time_taken = db.Column(db.Integer, nullable=True)  # Time in seconds
+    status = db.Column(db.String(20), default="in_progress")  # in_progress, completed
+    answers_json = db.Column(db.Text, nullable=True)  # Store partial answers as JSON
+    remaining_time = db.Column(db.Integer, nullable=True)  # Remaining time in seconds
     
     # Relationships
     student = db.relationship("Student", backref="quiz_attempts")

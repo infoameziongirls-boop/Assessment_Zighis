@@ -1,33 +1,172 @@
 {% extends "base.html" %}
-{% block title %}Login - Assessment System{% endblock %}
+{% block title %}Teacher & Admin Login - DG MODULE SYSTEM{% endblock %}
 {% block login_content %}
-<div class="row min-vh-100 align-items-center">
-    <div class="col-md-4 offset-md-4">
-        <div class="card shadow-lg">
-            <div class="card-body p-5">
-                <div class="text-center mb-4">
-                    <i class="bi bi-mortarboard-fill" style="font-size: 3rem; color: var(--primary-color);"></i>
-                    <h3 class="mt-3">Assessment System</h3>
-                    <p class="text-muted">Please login to continue</p>
+<style>
+    .login-container-admin {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 20px;
+    }
+    
+    .login-card-admin {
+        border: none;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        animation: slideUp 0.6s ease;
+    }
+    
+    @keyframes slideUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
+    .login-header-admin {
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        color: white;
+        padding: 40px 30px;
+        text-align: center;
+    }
+    
+    .login-icon-admin {
+        font-size: 3rem;
+        margin-bottom: 15px;
+        background: rgba(255, 255, 255, 0.2);
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 15px;
+    }
+    
+    .login-body-admin {
+        padding: 40px;
+    }
+    
+    .form-control-admin {
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px 15px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        background-color: #f8f9fa;
+    }
+    
+    .form-control-admin:focus {
+        border-color: #667eea;
+        background-color: white;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .btn-login-admin {
+        padding: 12px 20px;
+        font-weight: 600;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        transition: all 0.3s ease;
+        font-size: 1rem;
+    }
+    
+    .btn-login-admin:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        color: white;
+    }
+    
+    .login-footer-admin {
+        text-align: center;
+        padding: 20px 0 0;
+        border-top: 1px solid #e0e0e0;
+        margin-top: 20px;
+    }
+    
+    .switch-login-link {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 500;
+        transition: color 0.3s ease;
+    }
+    
+    .switch-login-link:hover {
+        color: #764ba2;
+        text-decoration: underline;
+    }
+    
+    .admin-badge {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-top: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+</style>
+
+<div class="login-container-admin">
+    <div class="col-lg-5 col-md-7 col-sm-10">
+        <div class="card login-card-admin">
+            <div class="login-header-admin">
+                <div class="login-icon-admin">
+                    <i class="bi bi-shield-check"></i>
                 </div>
+                <h3 class="mb-2">Teacher & Admin Portal</h3>
+                <p class="mb-0">Manage assessments and track progress</p>
+                <div class="admin-badge">Staff Access</div>
+            </div>
+            
+            <div class="login-body-admin">
                 <form method="POST">
                     {{ form.hidden_tag() }}
+                    
                     <div class="mb-3">
-                        {{ form.username.label(class="form-label") }}
-                        {{ form.username(class="form-control form-control-lg", placeholder="Enter username") }}
+                        {{ form.username.label(class="form-label fw-600") }}
+                        {{ form.username(class="form-control form-control-lg form-control-admin", placeholder="Enter your username") }}
+                        {% if form.username.errors %}
+                            <div class="text-danger small mt-2">
+                                {% for error in form.username.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
-                    <div class="mb-3">
-                        {{ form.password.label(class="form-label") }}
-                        {{ form.password(class="form-control form-control-lg", placeholder="Enter password") }}
+                    
+                    <div class="mb-4">
+                        {{ form.password.label(class="form-label fw-600") }}
+                        {{ form.password(class="form-control form-control-lg form-control-admin", placeholder="Enter your password") }}
+                        {% if form.password.errors %}
+                            <div class="text-danger small mt-2">
+                                {% for error in form.password.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="bi bi-box-arrow-in-right"></i> Login
+                    
+                    <button type="submit" class="btn btn-login-admin btn-lg w-100">
+                        <i class="bi bi-box-arrow-in-right"></i> Sign In
                     </button>
                 </form>
+                
+                <div class="login-footer-admin">
+                    <p class="mb-2 text-muted">First time here?</p>
+                    <a href="{{ url_for('student_login') }}" class="switch-login-link">
+                        <i class="bi bi-person-check"></i> Student Login
+                    </a>
+                    <p class="text-muted small mt-3 mb-0">Need password reset? Contact administrator</p>
+                </div>
             </div>
-        </div>
-        <div class="text-center mt-3 text-muted">
-            <small>Default credentials: admin / Admin@123</small>
         </div>
     </div>
 </div>

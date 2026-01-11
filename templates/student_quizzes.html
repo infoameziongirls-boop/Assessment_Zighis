@@ -54,6 +54,11 @@
                             <p class="mb-1"><strong>Score:</strong> {{ attempt.correct_answers }}/{{ attempt.total_questions }}</p>
                             <p class="mb-1"><strong>Percentage:</strong> {{ attempt.get_percentage()|round(1) }}%</p>
                             <p class="mb-0"><strong>Completed:</strong> {{ attempt.completed_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                            <div class="mt-2">
+                                <a href="{{ url_for('quiz_attempt_review', attempt_id=attempt.id) }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-eye"></i> Review Results
+                                </a>
+                            </div>
                         </div>
                         {% else %}
                         <a href="{{ url_for('take_quiz', quiz_id=quiz.id) }}" class="btn btn-primary">

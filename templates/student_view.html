@@ -34,6 +34,52 @@
     </div>
 </div>
 
+<!-- Performance Metrics -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card stat-card success h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-clipboard-check-fill fs-1 text-success mb-3"></i>
+                <h3 class="fw-bold">{{ assessments|length }}</h3>
+                <p class="text-muted mb-0">Total Assessments</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card stat-card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-percent fs-1 text-primary mb-3"></i>
+                <h3 class="fw-bold">{{ "%.1f"|format(final_percent) if final_percent else '0.0' }}%</h3>
+                <p class="text-muted mb-0">Final Grade</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card stat-card warning h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-graph-up fs-1 text-warning mb-3"></i>
+                <h3 class="fw-bold">{{ "%.1f"|format(gpa) if gpa else '0.0' }}</h3>
+                <p class="text-muted mb-0">GPA</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card stat-card danger h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-star-fill fs-1 text-danger mb-3"></i>
+                <h3 class="fw-bold">{{ letter_grade or 'N/A' }}</h3>
+                <p class="text-muted mb-0">Grade</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if comment %}
+<div class="alert alert-info mb-4">
+    <i class="bi bi-info-circle-fill"></i> <strong>Performance Comment:</strong> {{ comment }}
+</div>
+{% endif %}
+
 {% if all_subjects %}
 <div class="card mb-4">
     <div class="card-body">
@@ -52,33 +98,53 @@
 </div>
 {% endif %}
 
-{% if final_percent is not none %}
-<div class="card mb-4 border-success">
-    <div class="card-header bg-success text-white">
-        <h5 class="mb-0"><i class="bi bi-trophy"></i> Final Weighted Grade{% if subject %} for {{ subject }}{% endif %}</h5>
+{% if teacher_results %}
+<div class="card mb-4">
+    <div class="card-header bg-info text-white">
+        <h5 class="mb-0"><i class="bi bi-person-lines-fill"></i> Results by Teacher & Subject</h5>
     </div>
-    <div class="card-body text-center">
-        <div class="row align-items-center justify-content-center">
-            {% if gpa is not none %}
-            <div class="col-auto">
-                <h2 class="mb-1">{{ "%.1f"|format(gpa) }}</h2>
-                <small class="text-muted">GPA</small>
+    <div class="card-body">
+        {% for teacher_name, subjects in teacher_results.items() %}
+        <div class="mb-4">
+            <h6 class="text-primary mb-3"><i class="bi bi-person-circle"></i> {{ teacher_name }}</h6>
+            <div class="row">
+                {% for subject_name, data in subjects.items() %}
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card border-primary">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">{{ subject_name|title }}</h6>
+                            {% if data.final_percent is not none %}
+                            <div class="mb-2">
+                                {% if data.final_percent >= 70 %}
+                                    <div class="bg-success text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 70px; height: 70px; font-size: 1rem; font-weight: bold;">
+                                        {{ "%.1f"|format(data.final_percent) }}%
+                                    </div>
+                                {% elif data.final_percent >= 45 %}
+                                    <div class="bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 70px; height: 70px; font-size: 1rem; font-weight: bold;">
+                                        {{ "%.1f"|format(data.final_percent) }}%
+                                    </div>
+                                {% else %}
+                                    <div class="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center mx-auto" style="width: 70px; height: 70px; font-size: 1rem; font-weight: bold;">
+                                        {{ "%.1f"|format(data.final_percent) }}%
+                                    </div>
+                                {% endif %}
+                            </div>
+                            <div class="mt-2">
+                                <small class="text-muted">Grade: {{ data.grade or 'N/A' }} | GPA: {{ data.gpa or 'N/A' }}</small>
+                                <br>
+                                <small class="text-muted">{{ data.assessments|length }} assessments</small>
+                            </div>
+                            {% else %}
+                            <div class="text-muted">No grade calculated</div>
+                            <small class="text-muted">{{ data.assessments|length }} assessments</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
-            {% endif %}
-            <div class="col-auto">
-                <h1 class="display-4 mb-0"><strong>{{ "%.2f"|format(final_percent) }}%</strong></h1>
-            </div>
-            {% if letter_grade %}
-            <div class="col-auto">
-                <h2 class="mb-1">{{ letter_grade }}</h2>
-                <small class="text-muted">Letter Grade</small>
-            </div>
-            {% endif %}
         </div>
-        {% if comment %}
-        <p class="mt-3"><strong style="font-size: 1.2em;">{{ comment }}</strong></p>
-        {% endif %}
-        <p class="text-muted">Based on available assessments{% if subject %} for {{ subject }}{% endif %}</p>
+        {% endfor %}
     </div>
 </div>
 {% endif %}

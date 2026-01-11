@@ -1,43 +1,241 @@
 {% extends "base.html" %}
-{% block title %}Student Login - Assessment System{% endblock %}
+{% block title %}Student Login - DG MODULE SYSTEM{% endblock %}
 {% block login_content %}
 <style>
-body {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
+    .login-container-student {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 20px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .login-container-student::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 500px;
+        height: 500px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        animation: float 6s ease-in-out infinite;
+    }
+    
+    .login-container-student::after {
+        content: '';
+        position: absolute;
+        bottom: -20%;
+        left: -10%;
+        width: 400px;
+        height: 400px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        animation: float 8s ease-in-out infinite reverse;
+    }
+    
+    @keyframes float {
+        0%, 100% {
+            transform: translateY(0px);
+        }
+        50% {
+            transform: translateY(30px);
+        }
+    }
+    
+    .login-content-student {
+        position: relative;
+        z-index: 1;
+    }
+    
+    .login-card-student {
+        border: none;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 15px 50px rgba(0, 0, 0, 0.25);
+        animation: slideIn 0.6s ease;
+    }
+    
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateX(50px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    .login-header-student {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        padding: 45px 30px 30px;
+        text-align: center;
+        position: relative;
+    }
+    
+    .login-icon-student {
+        font-size: 3.5rem;
+        margin-bottom: 15px;
+        background: rgba(255, 255, 255, 0.25);
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 20px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .student-badge {
+        display: inline-block;
+        background: rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 6px 14px;
+        border-radius: 25px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-top: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+    }
+    
+    .login-body-student {
+        padding: 45px;
+        background: white;
+    }
+    
+    .form-control-student {
+        border: 2px solid #f0f0f0;
+        border-radius: 10px;
+        padding: 14px 16px;
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+        background-color: #f9f9f9;
+    }
+    
+    .form-control-student:focus {
+        border-color: #f5576c;
+        background-color: white;
+        box-shadow: 0 0 0 4px rgba(245, 87, 108, 0.1);
+    }
+    
+    .btn-login-student {
+        padding: 14px 24px;
+        font-weight: 600;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        border: none;
+        transition: all 0.3s ease;
+        font-size: 1rem;
+        color: white;
+    }
+    
+    .btn-login-student:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(245, 87, 108, 0.4);
+        color: white;
+    }
+    
+    .btn-login-student:active {
+        transform: translateY(-1px);
+    }
+    
+    .login-footer-student {
+        text-align: center;
+        padding: 25px 0 0;
+        border-top: 1px solid #f0f0f0;
+        margin-top: 25px;
+    }
+    
+    .switch-login-link-student {
+        color: #f5576c;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        display: inline-block;
+    }
+    
+    .switch-login-link-student:hover {
+        color: #f093fb;
+        transform: translateX(5px);
+    }
+    
+    .help-text-student {
+        background: rgba(245, 87, 108, 0.05);
+        border-left: 4px solid #f5576c;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 20px;
+    }
+    
+    .form-label {
+        color: #333;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
 </style>
-<div class="row min-vh-100 align-items-center">
-    <div class="col-md-4 offset-md-4">
-        <div class="card shadow-lg">
-            <div class="card-body p-5">
-                <div class="text-center mb-4">
-                    <i class="bi bi-mortarboard-fill" style="font-size: 3rem; color: var(--primary-color);"></i>
-                    <h3 class="mt-3">Student Portal</h3>
-                    <p class="text-muted">Enter your details to view assessments</p>
+
+<div class="login-container-student">
+    <div class="login-content-student col-lg-5 col-md-7 col-sm-10">
+        <div class="card login-card-student">
+            <div class="login-header-student">
+                <div class="login-icon-student">
+                    <i class="bi bi-backpack2"></i>
                 </div>
+                <h3 class="mb-0">Student Portal</h3>
+                <p class="mb-0 mt-2" style="font-size: 0.95rem;">Take quizzes and view assessments</p>
+                <div class="student-badge">Student Access</div>
+            </div>
+            
+            <div class="login-body-student">
                 <form method="POST">
                     {{ form.hidden_tag() }}
+                    
                     <div class="mb-3">
                         {{ form.first_name.label(class="form-label") }}
-                        {{ form.first_name(class="form-control form-control-lg", placeholder="Enter your first name") }}
+                        {{ form.first_name(class="form-control form-control-lg form-control-student", placeholder="e.g. John") }}
+                        {% if form.first_name.errors %}
+                            <div class="text-danger small mt-2">
+                                {% for error in form.first_name.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
-                    <div class="mb-3">
+                    
+                    <div class="mb-4">
                         {{ form.student_number.label(class="form-label") }}
-                        {{ form.student_number(class="form-control form-control-lg", placeholder="Enter student number") }}
+                        {{ form.student_number(class="form-control form-control-lg form-control-student", placeholder="e.g. STU123456") }}
+                        {% if form.student_number.errors %}
+                            <div class="text-danger small mt-2">
+                                {% for error in form.student_number.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
                     </div>
-                    <button type="submit" class="btn btn-primary btn-lg w-100">
-                        <i class="bi bi-box-arrow-in-right"></i> Student Login
+                    
+                    <button type="submit" class="btn btn-login-student btn-lg w-100">
+                        <i class="bi bi-box-arrow-in-right"></i> Enter Portal
                     </button>
                 </form>
-                <div class="text-center mt-3">
-                    <a href="{{ url_for('login') }}" class="text-decoration-none">
-                        <i class="bi bi-person-gear"></i> Teacher/Admin Login
+                
+                <div class="login-footer-student">
+                    <p class="mb-2 text-muted small">Are you a teacher or admin?</p>
+                    <a href="{{ url_for('login') }}" class="switch-login-link-student">
+                        <i class="bi bi-person-gear"></i> Staff Login
                     </a>
+                    
+                    <div class="help-text-student">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Don't know your student number?</strong><br>
+                        <small>Ask your teacher or check your enrollment confirmation email.</small>
+                    </div>
                 </div>
             </div>
-        </div>
-        <div class="text-center mt-3 text-muted">
-            <small>Need help? Contact your teacher for student number</small>
         </div>
     </div>
 </div>

@@ -38,8 +38,9 @@
                             {% if u.role == 'teacher' %}
                                 {% if u.subject %}
                                     <small>{{ u.get_subject_display() }}</small>
-                                    {% if u.class_name %}
-                                        <br><small class="text-muted">Class: {{ u.class_name }}</small>
+                                    {% set classes = u.get_classes_list() %}
+                                    {% if classes %}
+                                        <br><small class="text-muted">Classes: {{ classes|join(', ') }}</small>
                                     {% endif %}
                                 {% else %}
                                     <small class="text-muted">Not assigned</small>

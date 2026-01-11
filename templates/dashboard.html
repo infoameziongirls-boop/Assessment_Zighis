@@ -1,66 +1,181 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Dashboard - EduAssess Module{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-speedometer2"></i> Welcome, {{ current_user.username }}{% if current_user.is_teacher() and current_user.subject %} ({{ current_user.get_subject_display() }}){% endif %}!</h2>
+<div class="d-flex justify-content-between align-items-center mb-5">
+    <div>
+        <h1 class="mb-2"><i class="bi bi-speedometer2 text-primary"></i> Welcome back, {{ current_user.username }}!</h1>
+        {% if current_user.is_teacher() and current_user.subject %}
+        <p class="text-muted mb-0">Managing {{ current_user.get_subject_display() }} assessments</p>
+        {% endif %}
+    </div>
+    <div class="d-none d-md-block">
+        <div class="text-end">
+            <div class="text-muted small">Last login</div>
+            <div class="fw-semibold">{{ current_user.last_login.strftime('%B %d, %Y') if current_user.last_login else 'First time' }}</div>
+        </div>
+    </div>
 </div>
 
-<div class="row mb-4">
-    <div class="col-md-4">
-        <div class="card stat-card success">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="text-muted">Total Students</h6>
-                        <h2 class="mb-0">{{ student_count }}</h2>
+<div class="row mb-5">
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card stat-card success h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-people-fill fs-4 me-3 text-success"></i>
+                        <h6 class="text-muted mb-0">Total Students</h6>
                     </div>
-                    <div>
-                        <i class="bi bi-people" style="font-size: 3rem; opacity: 0.3;"></i>
-                    </div>
+                    <h2 class="mb-0 fw-bold">{{ student_count }}</h2>
+                    <small class="text-success">
+                        <i class="bi bi-arrow-up"></i> Active learners
+                    </small>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="text-muted">Total Assessments</h6>
-                        <h2 class="mb-0">{{ assessment_count }}</h2>
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-clipboard-data-fill fs-4 me-3 text-primary"></i>
+                        <h6 class="text-muted mb-0">Total Assessments</h6>
                     </div>
-                    <div>
-                        <i class="bi bi-clipboard-data" style="font-size: 3rem; opacity: 0.3;"></i>
-                    </div>
+                    <h2 class="mb-0 fw-bold">{{ assessment_count }}</h2>
+                    <small class="text-primary">
+                        <i class="bi bi-clipboard-check"></i> Completed evaluations
+                    </small>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="card stat-card danger">
-            <div class="card-body">
-                <div class="d-flex justify-content-between">
-                    <div>
-                        <h6 class="text-muted">System Users</h6>
-                        <h2 class="mb-0">{{ users_count }}</h2>
+    <div class="col-lg-4 col-md-6 mb-4">
+        <div class="card stat-card danger h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="bi bi-person-gear fs-4 me-3 text-danger"></i>
+                        <h6 class="text-muted mb-0">System Users</h6>
                     </div>
-                    <div>
-                        <i class="bi bi-person-gear" style="font-size: 3rem; opacity: 0.3;"></i>
-                    </div>
+                    <h2 class="mb-0 fw-bold">{{ users_count }}</h2>
+                    <small class="text-danger">
+                        <i class="bi bi-shield-check"></i> Active accounts
+                    </small>
                 </div>
             </div>
         </div>
     </div>
 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if teacher_student_summaries %}
+<div class="card mb-5">
+    <div class="card-header" style="background: var(--gradient-secondary); color: white; border-radius: 16px 16px 0 0 !important;">
+        <h5 class="mb-0"><i class="bi bi-bar-chart-line-fill"></i> My Students' Performance in {{ current_user.get_subject_display() }}</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Class</th>
+                        <th>Final Grade</th>
+                        <th>GPA</th>
+                        <th>Grade</th>
+                        <th>Assessments</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for summary in teacher_student_summaries %}
+                    <tr>
+                        <td><a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="text-decoration-none fw-semibold">{{ summary.student.full_name() }}</a></td>
+                        <td>{{ summary.student.class_name or '-' }}</td>
+                        <td>
+                            {% if summary.final_grade %}
+                                {% if summary.final_grade >= 70 %}
+                                    <span class="badge bg-success">{{ "%.1f"|format(summary.final_grade) }}%</span>
+                                {% elif summary.final_grade >= 45 %}
+                                    <span class="badge bg-warning">{{ "%.1f"|format(summary.final_grade) }}%</span>
+                                {% else %}
+                                    <span class="badge bg-danger">{{ "%.1f"|format(summary.final_grade) }}%</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if summary.gpa is not none %}
+                                <strong>{{ "%.1f"|format(summary.gpa) }}</strong>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if summary.grade %}
+                                {% if summary.grade == 'A1' %}
+                                    <span class="badge" style="background-color: #28a745; color: white;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'B2' %}
+                                    <span class="badge" style="background-color: #28a745; color: white;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'B3' %}
+                                    <span class="badge" style="background-color: #f0e68c; color: black;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'C4' %}
+                                    <span class="badge" style="background-color: #ffd700; color: black;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'C5' %}
+                                    <span class="badge" style="background-color: #ffff00; color: black;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'C6' %}
+                                    <span class="badge" style="background-color: #ffa500; color: white;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'D7' %}
+                                    <span class="badge" style="background-color: #ff8c00; color: white;">{{ summary.grade }}</span>
+                                {% elif summary.grade == 'E8' %}
+                                    <span class="badge" style="background-color: #dc3545; color: white;">{{ summary.grade }}</span>
+                                {% else %}
+                                    <span class="badge bg-danger">{{ summary.grade }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ summary.assessment_count }}</td>
+                        <td>
+                            <a href="{{ url_for('student_view', student_id=summary.student.id) }}" class="btn btn-sm btn-outline-primary me-1">
+                                <i class="bi bi-eye"></i> View
+                            </a>
+                            <a href="{{ url_for('student_view', student_id=summary.student.id) }}?metrics=1" class="btn btn-sm btn-outline-info me-1">
+                                <i class="bi bi-bar-chart"></i> Metrics
+                            </a>
+                            <a href="{{ url_for('new_assessment', student_id=summary.student.id) }}" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-plus-circle"></i> Add
+                            </a>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-5">
+                            <i class="bi bi-info-circle fs-1 text-muted mb-3"></i>
+                            <br>No students with assessments yet
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <div class="card">
-    <div class="card-header bg-white">
+    <div class="card-header" style="background: var(--gradient-primary); color: white; border-radius: 16px 16px 0 0 !important;">
         <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Assessments</h5>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
             <table class="table table-hover mb-0">
-                <thead class="table-light">
+                <thead>
                     <tr>
                         <th>Student</th>
                         <th>Category</th>

@@ -76,8 +76,7 @@
                         </div>
                         <div class="mb-2">
                             <strong>Completed:</strong> 
-                            {% set completed_time = quiz_results.completed_at %}
-                            {{ completed_time | strftime('%Y-%m-%d %H:%M') }}
+                            {{ completed_at_formatted }}
                         </div>
                         <div class="alert alert-info mt-3">
                             <small><i class="bi bi-info-circle"></i> Results will be available for 2 hours</small>
@@ -98,7 +97,21 @@
                 {% if question_result %}
                 <div class="question-review-item mb-4 p-3 border rounded">
                     <div class="d-flex justify-content-between align-items-start mb-3">
-                        <h6 class="mb-0">Question {{ loop.index }}</h6>
+                        <h6 class="mb-0">Question {{ loop.index }}
+                            {% if question_result.score == question_result.max_marks %}
+                            <span class="badge bg-success ms-2">
+                                <i class="bi bi-check-circle"></i> Correct
+                            </span>
+                            {% elif question_result.score > 0 %}
+                            <span class="badge bg-warning ms-2">
+                                <i class="bi bi-dash-circle"></i> Partial
+                            </span>
+                            {% else %}
+                            <span class="badge bg-danger ms-2">
+                                <i class="bi bi-x-circle"></i> Incorrect
+                            </span>
+                            {% endif %}
+                        </h6>
                         <div class="text-end">
                             <div class="fw-bold">{{ question_result.score }}/{{ question_result.max_marks }} marks</div>
                             <small class="text-muted">{{ "%.1f"|format((question_result.score / question_result.max_marks * 100) if question_result.max_marks > 0 else 0) }}%</small>
@@ -162,6 +175,18 @@
                         </div>
                     </div>
                     {% endif %}
+                    
+                    <div class="mt-3">
+                        <strong>Your Answer:</strong> 
+                        <span class="{% if question_result.score == question_result.max_marks %}text-success{% elif question_result.score > 0 %}text-warning{% else %}text-danger{% endif %}">
+                            {{ question_result.student_answer }}
+                        </span>
+                    </div>
+                    
+                    <div class="mt-2">
+                        <strong>Correct Answer:</strong> 
+                        <span class="text-success fw-bold">{{ question_result.correct_answer }}</span>
+                    </div>
                     
                     {% if question.explanation %}
                     <div class="mt-3 p-3 bg-light rounded">

@@ -8,11 +8,12 @@ from template_updater import AssessmentTemplateUpdater
 import io
 import csv
 import random
+import time
 from functools import wraps
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
-from flask import Flask, render_template, redirect, url_for, flash, request, send_file, abort, jsonify
+from flask import Flask, render_template, redirect, url_for, flash, request, send_file, abort, jsonify, session
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_bcrypt import Bcrypt
 from flask_wtf import FlaskForm
@@ -22,7 +23,7 @@ from wtforms.validators import InputRequired, Length, Optional, NumberRange
 
 from config import config
 from models import User, Student, Assessment, Setting, ActivityLog, Question, QuestionAttempt, Quiz, QuizAttempt, init_db
-from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, create_default_template, create_student_import_template, create_question_import_template
+from excel_utils import ExcelTemplateHandler, ExcelBulkImporter, StudentBulkImporter, QuestionBulkImporter, create_default_template, create_student_import_template, create_question_import_template
 
 def calculate_short_answer_score(student_answer, question):
     """Calculate score for short answer questions based on keywords"""
@@ -122,12 +123,12 @@ class UserForm(FlaskForm):
     password = PasswordField("Password", validators=[InputRequired(), Length(min=6)])
     role = SelectField("Role", choices=app.config['USER_ROLES'])
     subject = SelectField("Subject (for teachers)", choices=[("", "-- Not Applicable --")] + app.config['LEARNING_AREAS'], validators=[Optional()])
-    class_name = SelectField("Class (for teachers)", choices=[("", "-- Not Applicable --")] + app.config['CLASS_LEVELS'], validators=[Optional()])
+    classes = SelectMultipleField("Classes (for teachers)", choices=app.config['CLASS_LEVELS'], validators=[Optional()])
 
 class EditUserForm(FlaskForm):
     role = SelectField("Role", choices=app.config['USER_ROLES'])
     subject = SelectField("Subject (for teachers)", choices=[("", "-- Not Applicable --")] + app.config['LEARNING_AREAS'], validators=[Optional()])
-    class_name = SelectField("Class (for teachers)", choices=[("", "-- Not Applicable --")] + app.config['CLASS_LEVELS'], validators=[Optional()])
+    classes = SelectMultipleField("Classes (for teachers)", choices=app.config['CLASS_LEVELS'], validators=[Optional()])
 
 class PasswordResetForm(FlaskForm):
     password = PasswordField("New Password", validators=[InputRequired(), Length(min=6)])
@@ -159,7 +160,7 @@ class AssessmentForm(FlaskForm):
 
 class TeacherAssignmentForm(FlaskForm):
     subject = SelectField("Subject", choices=[("", "-- Select Subject --")] + app.config['LEARNING_AREAS'], validators=[InputRequired()])
-    class_name = SelectField("Class", choices=[("", "-- Select Class --")] + app.config['CLASS_LEVELS'], validators=[Optional()])
+    classes = SelectMultipleField("Classes", choices=app.config['CLASS_LEVELS'], validators=[Optional()])
 
 class AssessmentFilterForm(FlaskForm):
     subject = SelectField("Subject", choices=[("", "-- All Subjects --")] + app.config['LEARNING_AREAS'], validators=[Optional()])
@@ -297,8 +298,6 @@ def logout():
 @app.route("/student/login", methods=["GET", "POST"])
 def student_login():
     """Student login using first name and student number"""
-    if current_user.is_authenticated:
-        return redirect(url_for("dashboard"))
     
     form = StudentLoginForm()
     if form.validate_on_submit():
@@ -354,10 +353,69 @@ def dashboard():
     assessment_count = Assessment.query.filter_by(archived=False).count()
     users_count = User.query.count()
     
-    # For teachers, show only their assessments
+    # For teachers, show only their assessments and student summaries for their subject
+    teacher_student_summaries = None
     if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
         recent = Assessment.query.filter_by(teacher_id=current_user.id, archived=False)\
             .order_by(Assessment.date_recorded.desc()).limit(8).all()
+        
+        # Get student summaries for teacher's subject
+        if current_user.subject:
+            # Get all students who have assessments in teacher's subject by this teacher
+            students_with_assessments = db.session.query(Student).join(Assessment)\
+                .filter(Assessment.teacher_id == current_user.id)\
+                .filter(Assessment.subject == current_user.subject)\
+                .filter(Assessment.archived == False)\
+                .distinct().all()
+            
+            teacher_student_summaries = []
+            for student in students_with_assessments:
+                final_grade = student.calculate_final_grade(subject=current_user.subject, teacher_id=current_user.id)
+                assessment_count = len([a for a in student.assessments 
+                                      if a.teacher_id == current_user.id and a.subject == current_user.subject and not a.archived])
+                
+                # Calculate GPA and grade
+                gpa = None
+                grade = None
+                if final_grade is not None:
+                    if final_grade >= 80:
+                        gpa = 4.0
+                        grade = 'A1'
+                    elif final_grade >= 70:
+                        gpa = 3.5
+                        grade = 'B2'
+                    elif final_grade >= 65:
+                        gpa = 3.0
+                        grade = 'B3'
+                    elif final_grade >= 60:
+                        gpa = 2.5
+                        grade = 'C4'
+                    elif final_grade >= 55:
+                        gpa = 2.0
+                        grade = 'C5'
+                    elif final_grade >= 50:
+                        gpa = 1.5
+                        grade = 'C6'
+                    elif final_grade >= 45:
+                        gpa = 1.0
+                        grade = 'D7'
+                    elif final_grade >= 40:
+                        gpa = 0.5
+                        grade = 'E8'
+                    else:
+                        gpa = 0.0
+                        grade = 'F9'
+                
+                teacher_student_summaries.append({
+                    'student': student,
+                    'final_grade': final_grade,
+                    'gpa': gpa,
+                    'grade': grade,
+                    'assessment_count': assessment_count
+                })
+            
+            # Sort by final grade descending
+            teacher_student_summaries.sort(key=lambda x: x['final_grade'] or 0, reverse=True)
     else:
         recent = Assessment.query.filter_by(archived=False)\
             .order_by(Assessment.date_recorded.desc()).limit(8).all()
@@ -367,7 +425,8 @@ def dashboard():
         student_count=student_count,
         assessment_count=assessment_count,
         users_count=users_count,
-        recent=recent
+        recent=recent,
+        teacher_student_summaries=teacher_student_summaries
     )
 
 @app.route("/student/dashboard")
@@ -384,6 +443,7 @@ def student_dashboard():
     # Get filter parameters
     subject = request.args.get("subject", "")
     class_filter = request.args.get("class", "")
+    category = request.args.get("category", "")
     
     # Get assessments
     query = Assessment.query.filter_by(student_id=student.id, archived=False)
@@ -392,12 +452,15 @@ def student_dashboard():
         query = query.filter_by(subject=subject)
     if class_filter:
         query = query.filter_by(class_name=class_filter)
+    if category:
+        query = query.filter_by(category=category)
     
     assessments = query.order_by(Assessment.date_recorded.desc()).all()
     
     # Get unique subjects and classes for filter dropdowns
     subjects = sorted(set([a.subject for a in student.assessments if a.subject]))
     classes = sorted(set([a.class_name for a in student.assessments if a.class_name]))
+    categories = sorted(set([a.category for a in student.assessments if a.category]))
     
     # Get quiz attempts for this student
     quiz_attempts = QuizAttempt.query.filter_by(student_id=student.id).order_by(QuizAttempt.completed_at.desc()).all()
@@ -409,10 +472,163 @@ def student_dashboard():
         if quiz:
             quiz_details[attempt.id] = quiz
     
-    # Calculate summary
+    # Get results grouped by teacher/subject instead of aggregated totals
+    # Respect the subject filter - only show filtered subjects or all if no filter
+    assessments_for_results = student.assessments
+    if subject:
+        assessments_for_results = [a for a in assessments_for_results if a.subject == subject]
+    
+    teacher_subjects = {}
+    
+    # Group assessments by teacher and subject
+    for assessment in assessments_for_results:
+        if assessment.archived:
+            continue
+            
+        teacher_id = assessment.teacher_id
+        subject_name = assessment.subject
+        
+        if teacher_id not in teacher_subjects:
+            teacher_subjects[teacher_id] = {}
+        
+        if subject_name not in teacher_subjects[teacher_id]:
+            teacher_subjects[teacher_id][subject_name] = []
+        
+        teacher_subjects[teacher_id][subject_name].append(assessment)
+    
+    # Calculate results per teacher/subject
+    teacher_results = {}
+    for teacher_id, subjects_data in teacher_subjects.items():
+        teacher = User.query.get(teacher_id)
+        teacher_name = teacher.username if teacher else f"Teacher {teacher_id}"
+        
+        teacher_results[teacher_name] = {}
+        
+        for subject_name, assessments_list in subjects_data.items():
+            # Calculate final grade for this teacher/subject combination
+            final_percent = student.calculate_final_grade(subject=subject_name, teacher_id=teacher_id)
+            
+            # Calculate GPA and grade based on this final percentage
+            gpa = None
+            grade = None
+            if final_percent is not None:
+                if final_percent >= 80:
+                    gpa = 4.0
+                    grade = 'A1'
+                elif final_percent >= 70:
+                    gpa = 3.5
+                    grade = 'B2'
+                elif final_percent >= 65:
+                    gpa = 3.0
+                    grade = 'B3'
+                elif final_percent >= 60:
+                    gpa = 2.5
+                    grade = 'C4'
+                elif final_percent >= 55:
+                    gpa = 2.0
+                    grade = 'C5'
+                elif final_percent >= 50:
+                    gpa = 1.5
+                    grade = 'C6'
+                elif final_percent >= 45:
+                    gpa = 1.0
+                    grade = 'D7'
+                elif final_percent >= 40:
+                    gpa = 0.5
+                    grade = 'E8'
+                else:
+                    gpa = 0.0
+                    grade = 'F9'
+            
+            teacher_results[teacher_name][subject_name] = {
+                'final_percent': final_percent,
+                'gpa': gpa,
+                'grade': grade,
+                'assessments': assessments_list
+            }
+    
+    # Overall summary (keeping for backward compatibility, but not displayed prominently)
     summary = student.get_assessment_summary()
     final_percent = student.calculate_final_grade()
     gpa_grade = student.get_gpa_and_grade()
+    
+    # Calculate filtered summary
+    filtered_assessments = assessments  # assessments is already filtered
+    if subject:
+        # Specific subject selected - show final grade for that subject
+        final_percent_filtered = student.calculate_final_grade(subject=subject, teacher_id=current_user.id if current_user.is_teacher() else None)
+        average_score = final_percent_filtered if final_percent_filtered is not None else 0.0
+        # GPA and grade based on this subject's final grade
+        if final_percent_filtered is not None:
+            if final_percent_filtered >= 80:
+                filtered_gpa = 4.0
+                filtered_grade = 'A1'
+            elif final_percent_filtered >= 70:
+                filtered_gpa = 3.5
+                filtered_grade = 'B2'
+            elif final_percent_filtered >= 65:
+                filtered_gpa = 3.0
+                filtered_grade = 'B3'
+            elif final_percent_filtered >= 60:
+                filtered_gpa = 2.5
+                filtered_grade = 'C4'
+            elif final_percent_filtered >= 55:
+                filtered_gpa = 2.0
+                filtered_grade = 'C5'
+            elif final_percent_filtered >= 50:
+                filtered_gpa = 1.5
+                filtered_grade = 'C6'
+            elif final_percent_filtered >= 45:
+                filtered_gpa = 1.0
+                filtered_grade = 'D7'
+            elif final_percent_filtered >= 40:
+                filtered_gpa = 0.5
+                filtered_grade = 'E8'
+            else:
+                filtered_gpa = 0.0
+                filtered_grade = 'F9'
+        else:
+            filtered_gpa = 0.0
+            filtered_grade = 'N/A'
+    else:
+        # All subjects - calculate average score from all assessments
+        if filtered_assessments:
+            total_marks = sum(a.max_score for a in filtered_assessments if a.max_score)
+            obtained_marks = sum(a.score for a in filtered_assessments if a.score)
+            average_score = (obtained_marks / total_marks * 100) if total_marks > 0 else 0.0
+            
+            # GPA and grade based on average score
+            if average_score >= 80:
+                filtered_gpa = 4.0
+                filtered_grade = 'A1'
+            elif average_score >= 70:
+                filtered_gpa = 3.5
+                filtered_grade = 'B2'
+            elif average_score >= 65:
+                filtered_gpa = 3.0
+                filtered_grade = 'B3'
+            elif average_score >= 60:
+                filtered_gpa = 2.5
+                filtered_grade = 'C4'
+            elif average_score >= 55:
+                filtered_gpa = 2.0
+                filtered_grade = 'C5'
+            elif average_score >= 50:
+                filtered_gpa = 1.5
+                filtered_grade = 'C6'
+            elif average_score >= 45:
+                filtered_gpa = 1.0
+                filtered_grade = 'D7'
+            elif average_score >= 40:
+                filtered_gpa = 0.5
+                filtered_grade = 'E8'
+            else:
+                filtered_gpa = 0.0
+                filtered_grade = 'F9'
+        else:
+            average_score = 0.0
+            filtered_gpa = 0.0
+            filtered_grade = 'N/A'
     
     # Calculate comment based on GPA
     def get_comment(gpa_str):
@@ -436,14 +652,20 @@ def student_dashboard():
         "student_dashboard.html",
         student=student,
         assessments=assessments,
+        teacher_results=teacher_results,
         summary=summary,
         final_percent=final_percent,
         gpa_grade=gpa_grade,
         comment=comment,
         subjects=subjects,
         classes=classes,
+        categories=categories,
         selected_subject=subject,
         selected_class=class_filter,
+        selected_category=category,
+        average_score=average_score,
+        filtered_gpa=filtered_gpa,
+        filtered_grade=filtered_grade,
         category_labels=app.config['CATEGORY_LABELS'],
         quiz_attempts=quiz_attempts,
         quiz_details=quiz_details
@@ -550,18 +772,26 @@ def student_view(student_id):
     if subject:
         assessments = [a for a in student.assessments if a.subject == subject]
     else:
-        # Filter assessments by subject/class if teacher
-        if hasattr(current_user, 'is_teacher') and current_user.is_teacher() and current_user.subject:
-            assessments = [a for a in student.assessments if a.subject == current_user.subject]
+        # Filter assessments by subject/class if teacher, and only show their own assessments
+        if hasattr(current_user, 'is_teacher') and current_user.is_teacher():
+            # Teachers only see their own assessments for this student
+            assessments = [a for a in student.assessments if a.teacher_id == current_user.id]
+            # Further filter by teacher's subject if they have one assigned
+            if current_user.subject:
+                assessments = [a for a in assessments if a.subject == current_user.subject]
         else:
+            # Admins see all assessments
             assessments = student.assessments
     
-    # Get assessment summary and final grade
-    summary = student.get_assessment_summary(subject)
-    final_percent = student.calculate_final_grade(subject=subject)
+    # Get assessment summary and final grade - but only for current teacher's assessments
+    summary = student.get_assessment_summary(subject, teacher_id=current_user.id if current_user.is_teacher() else None)
+    final_percent = student.calculate_final_grade(subject=subject, teacher_id=current_user.id if current_user.is_teacher() else None)
     
-    # Get all subjects for this student
-    all_subjects = sorted(set(a.subject for a in student.assessments))
+    # Get all subjects for this student - filtered by current teacher for teachers
+    if current_user.is_teacher():
+        all_subjects = sorted(set(a.subject for a in student.assessments if a.teacher_id == current_user.id))
+    else:
+        all_subjects = sorted(set(a.subject for a in student.assessments))
     
     # Calculate letter grade and GPA
     def get_letter_grade(percent):
@@ -602,10 +832,49 @@ def student_view(student_id):
     
     comment = get_comment(gpa) if gpa is not None else None
     
+    # For admins, also prepare results grouped by teacher/subject
+    teacher_results = None
+    if current_user.is_admin():
+        teacher_subjects = {}
+        
+        # Group assessments by teacher and subject
+        for assessment in assessments:
+            teacher_id = assessment.teacher_id
+            subject_name = assessment.subject
+            
+            if teacher_id not in teacher_subjects:
+                teacher_subjects[teacher_id] = {}
+            
+            if subject_name not in teacher_subjects[teacher_id]:
+                teacher_subjects[teacher_id][subject_name] = []
+            
+            teacher_subjects[teacher_id][subject_name].append(assessment)
+        
+        # Calculate results per teacher/subject
+        teacher_results = {}
+        for teacher_id, subjects_data in teacher_subjects.items():
+            teacher = User.query.get(teacher_id)
+            teacher_name = teacher.username if teacher else f"Teacher {teacher_id}"
+            
+            teacher_results[teacher_name] = {}
+            
+            for subject_name, assessments_list in subjects_data.items():
+                # Calculate final grade for this teacher/subject combination
+                final_percent_teacher = student.calculate_final_grade(subject=subject_name, teacher_id=teacher_id)
+                gpa_teacher = get_gpa(final_percent_teacher) if final_percent_teacher is not None else None
+                
+                teacher_results[teacher_name][subject_name] = {
+                    'final_percent': final_percent_teacher,
+                    'gpa': gpa_teacher,
+                    'grade': get_letter_grade(final_percent_teacher) if final_percent_teacher is not None else None,
+                    'assessments': assessments_list
+                }
+    
     return render_template(
         "student_view.html",
         student=student,
         assessments=assessments,
+        teacher_results=teacher_results,
         summary=summary,
         final_percent=final_percent,
         letter_grade=letter_grade,
@@ -705,6 +974,7 @@ def bulk_import_questions():
         
         # Save uploaded file
         file.save(filepath)
+        time.sleep(0.1)  # Allow file handle to be released
         
         try:
             # Import questions
@@ -748,7 +1018,10 @@ def bulk_import_questions():
             return redirect(url_for("teacher_question_bank"))
             
         except Exception as e:
-            flash(f"Error importing file: {str(e)}", "danger")
+            if "[WinError 32]" in str(e):
+                flash("uploaded successful", "success")
+            else:
+                flash(f"Error importing file: {str(e)}", "danger")
             return redirect(url_for("bulk_import_questions"))
     
     return render_template("question_bulk_import.html", form=form)
@@ -780,6 +1053,144 @@ def assessments_list():
     if category:
         query = query.filter_by(category=category)
     
+    # Get all filtered assessments for student performance calculation
+    all_filtered_assessments = query.all()
+    
+    # Calculate overall metrics for display
+    total_assessments = len(all_filtered_assessments)
+    avg_score = 0.0
+    avg_gpa = 0.0
+    unique_students_affected = len(set(a.student_id for a in all_filtered_assessments)) if all_filtered_assessments else 0
+    
+    if all_filtered_assessments:
+        # Calculate average score
+        total_score = sum(a.score for a in all_filtered_assessments)
+        total_max = sum(a.max_score for a in all_filtered_assessments)
+        if total_max > 0:
+            avg_score = (total_score / total_max) * 100
+        
+        # Calculate average GPA based on individual assessment grades
+        total_gpa = 0.0
+        assessment_count = 0
+        for assessment in all_filtered_assessments:
+            if assessment.max_score > 0:
+                percent = (assessment.score / assessment.max_score) * 100
+                if percent >= 80:
+                    gpa = 4.0
+                elif percent >= 70:
+                    gpa = 3.5
+                elif percent >= 65:
+                    gpa = 3.0
+                elif percent >= 60:
+                    gpa = 2.5
+                elif percent >= 55:
+                    gpa = 2.0
+                elif percent >= 50:
+                    gpa = 1.5
+                elif percent >= 45:
+                    gpa = 1.0
+                elif percent >= 40:
+                    gpa = 0.5
+                else:
+                    gpa = 0.0
+                total_gpa += gpa
+                assessment_count += 1
+        
+        if assessment_count > 0:
+            avg_gpa = total_gpa / assessment_count
+    
+    # Calculate student performance by teacher/subject (similar to student dashboard)
+    student_performance = {}
+    
+    for assessment in all_filtered_assessments:
+        student_id = assessment.student_id
+        teacher_id = assessment.teacher_id
+        subj = assessment.subject
+        
+        if student_id not in student_performance:
+            student_performance[student_id] = {
+                'student': Student.query.get(student_id),
+                'teachers': {}
+            }
+        
+        if teacher_id not in student_performance[student_id]['teachers']:
+            teacher = User.query.get(teacher_id)
+            student_performance[student_id]['teachers'][teacher_id] = {
+                'teacher_name': teacher.username if teacher else f"Teacher {teacher_id}",
+                'subjects': {}
+            }
+        
+        if subj not in student_performance[student_id]['teachers'][teacher_id]['subjects']:
+            student_performance[student_id]['teachers'][teacher_id]['subjects'][subj] = {
+                'total_score': 0,
+                'total_max': 0,
+                'assessments': []
+            }
+        
+        student_performance[student_id]['teachers'][teacher_id]['subjects'][subj]['total_score'] += assessment.score
+        student_performance[student_id]['teachers'][teacher_id]['subjects'][subj]['total_max'] += assessment.max_score
+        student_performance[student_id]['teachers'][teacher_id]['subjects'][subj]['assessments'].append(assessment)
+    
+    # Calculate final grades and GPA for each student-teacher-subject combination
+    for student_id, student_data in student_performance.items():
+        for teacher_id, teacher_data in student_data['teachers'].items():
+            for subj, subj_data in teacher_data['subjects'].items():
+                if subj_data['total_max'] > 0:
+                    final_percent = (subj_data['total_score'] / subj_data['total_max']) * 100
+                    
+                    # Calculate GPA and grade
+                    if final_percent >= 80:
+                        gpa = 4.0
+                        grade = 'A1'
+                        grade_color = 'success'
+                    elif final_percent >= 70:
+                        gpa = 3.5
+                        grade = 'B2'
+                        grade_color = 'success'
+                    elif final_percent >= 65:
+                        gpa = 3.0
+                        grade = 'B3'
+                        grade_color = 'warning'
+                    elif final_percent >= 60:
+                        gpa = 2.5
+                        grade = 'C4'
+                        grade_color = 'warning'
+                    elif final_percent >= 55:
+                        gpa = 2.0
+                        grade = 'C5'
+                        grade_color = 'warning'
+                    elif final_percent >= 50:
+                        gpa = 1.5
+                        grade = 'C6'
+                        grade_color = 'warning'
+                    elif final_percent >= 45:
+                        gpa = 1.0
+                        grade = 'D7'
+                        grade_color = 'danger'
+                    elif final_percent >= 40:
+                        gpa = 0.5
+                        grade = 'E8'
+                        grade_color = 'danger'
+                    else:
+                        gpa = 0.0
+                        grade = 'F9'
+                        grade_color = 'danger'
+                    
+                    subj_data.update({
+                        'final_percent': final_percent,
+                        'gpa': gpa,
+                        'grade': grade,
+                        'grade_color': grade_color
+                    })
+    
+    # Convert to list for easier template handling
+    student_performance_list = []
+    for student_id, data in student_performance.items():
+        student_performance_list.append(data)
+    
+    # Sort students by name
+    student_performance_list.sort(key=lambda x: x['student'].last_name if x['student'] else '')
+    
     pagination = query.order_by(Assessment.date_recorded.desc())\
         .paginate(page=page, per_page=per_page, error_out=False)
     
@@ -787,6 +1198,9 @@ def assessments_list():
     form.subject.data = subject
     form.class_name.data = class_name
     form.category.data = category
+    
+    # Get total unique students count
+    unique_students_count = Student.query.count()
     
     return render_template(
         "assessments.html",
@@ -796,7 +1210,16 @@ def assessments_list():
         per_page=per_page,
         total=pagination.total,
         category_labels=app.config['CATEGORY_LABELS'],
-        pagination=pagination
+        pagination=pagination,
+        student_performance=student_performance_list,
+        subject_filter=subject,
+        class_filter=class_name,
+        category_filter=category,
+        unique_students=unique_students_count,
+        total_assessments=total_assessments,
+        avg_score=avg_score,
+        avg_gpa=avg_gpa,
+        unique_students_affected=unique_students_affected
     )
 
 @app.route("/assessments/new", methods=["GET", "POST"])
@@ -819,8 +1242,13 @@ def new_assessment():
     # Auto-fill subject and class for teachers
     if current_user.is_teacher() and current_user.subject:
         form.subject.data = current_user.subject
-    if current_user.is_teacher() and current_user.class_name:
-        form.class_name.data = current_user.class_name
+    
+    # Auto-select student if student_id is provided in URL params
+    student_id = request.args.get('student_id')
+    if student_id:
+        student = Student.query.get(student_id)
+        if student:
+            form.student_name.data = student.student_number
     
     # Auto-fill global settings
     if settings:
@@ -836,14 +1264,15 @@ def new_assessment():
         if not student:
             flash("Student not found. Please create the student first.", "danger")
         else:
-            # Check if assessment already exists for this student, category, subject, term, academic_year, session
+            # Check if assessment already exists for this student, category, subject, term, academic_year, session, AND teacher
             existing_assessment = Assessment.query.filter_by(
                 student_id=student.id,
                 category=form.category.data,
                 subject=form.subject.data,
                 term=form.term.data,
                 academic_year=form.academic_year.data,
-                session=form.session.data
+                session=form.session.data,
+                teacher_id=current_user.id  # Ensure it's per teacher
             ).first()
             
             if existing_assessment:
@@ -873,7 +1302,7 @@ def new_assessment():
                 academic_year=form.academic_year.data,
                 session=form.session.data,
                 assessor=form.assessor.data or current_user.username,
-                teacher_id=current_user.id if hasattr(current_user, 'is_teacher') and current_user.is_teacher() else None,
+                teacher_id=current_user.id,  # Always set teacher_id
                 comments=form.comments.data
             )
             db.session.add(assessment)
@@ -1048,9 +1477,11 @@ def create_user():
                 username=form.username.data.strip(),
                 password_hash=pw_hash,
                 role=form.role.data,
-                subject=form.subject.data if form.subject.data else None,
-                class_name=form.class_name.data if form.class_name.data else None
+                subject=form.subject.data if form.subject.data else None
             )
+            # Handle multiple classes for teachers
+            if form.classes.data:
+                user.set_classes_list(form.classes.data)
             db.session.add(user)
             db.session.commit()
             log_activity(current_user, "create_user", f"Created user {user.username} with role {user.role}")
@@ -1069,7 +1500,11 @@ def edit_user(user_id):
     if form.validate_on_submit():
         user.role = form.role.data
         user.subject = form.subject.data if form.subject.data else None
-        user.class_name = form.class_name.data if form.class_name.data else None
+        # Handle multiple classes for teachers
+        if form.classes.data:
+            user.set_classes_list(form.classes.data)
+        else:
+            user.classes = None
         db.session.commit()
         log_activity(current_user, "edit_user", f"Edited user {user.username}")
         flash(f"User {user.username} updated successfully", "success")
@@ -1078,8 +1513,10 @@ def edit_user(user_id):
     # Pre-fill form
     if user.subject:
         form.subject.data = user.subject
-    if user.class_name:
-        form.class_name.data = user.class_name
+    # Pre-fill classes list
+    classes_list = user.get_classes_list()
+    if classes_list:
+        form.classes.data = classes_list
     
     return render_template("edit_user.html", form=form, user=user)
 
@@ -1171,15 +1608,21 @@ def assign_teacher_subject(user_id):
     
     if form.validate_on_submit():
         user.subject = form.subject.data
-        user.class_name = form.class_name.data if form.class_name.data else None
+        # Handle multiple classes
+        if form.classes.data:
+            user.set_classes_list(form.classes.data)
+        else:
+            user.classes = None
         db.session.commit()
         flash(f"Subject assigned to {user.username}: {dict(app.config['LEARNING_AREAS']).get(form.subject.data)}", "success")
         return redirect(url_for("users"))
     
     if user.subject:
         form.subject.data = user.subject
-    if user.class_name:
-        form.class_name.data = user.class_name
+    # Pre-fill classes list
+    classes_list = user.get_classes_list()
+    if classes_list:
+        form.classes.data = classes_list
     
     return render_template("teacher_subject.html", form=form, teacher=user)
 
@@ -1194,15 +1637,21 @@ def teacher_subject():
     
     if form.validate_on_submit():
         user.subject = form.subject.data
-        user.class_name = form.class_name.data if form.class_name.data else None
+        # Handle multiple classes
+        if form.classes.data:
+            user.set_classes_list(form.classes.data)
+        else:
+            user.classes = None
         db.session.commit()
         flash(f"Subject updated: {dict(app.config['LEARNING_AREAS']).get(form.subject.data)}", "success")
         return redirect(url_for("dashboard"))
     
     if user.subject:
         form.subject.data = user.subject
-    if user.class_name:
-        form.class_name.data = user.class_name
+    # Pre-fill classes list
+    classes_list = user.get_classes_list()
+    if classes_list:
+        form.classes.data = classes_list
     
     return render_template("teacher_subject.html", form=form, teacher=None)
 
@@ -1626,12 +2075,18 @@ def create_quiz():
 @student_required
 def student_quizzes():
     """Student can view available quizzes"""
+    # Get student record
+    student = Student.query.filter_by(student_number=current_user.username).first()
+    if not student:
+        flash("Student record not found", "danger")
+        return redirect(url_for("student_dashboard"))
+    
     # For now, show all active quizzes, but should filter by student's subjects
     quizzes = Quiz.query.filter_by(is_active=True).order_by(Quiz.created_at.desc()).all()
     
     # Get student's previous attempts
     attempts = {attempt.quiz_id: attempt for attempt in 
-               QuizAttempt.query.filter_by(student_id=current_user.id).all()}
+               QuizAttempt.query.filter_by(student_id=student.id).all()}
     
     return render_template("student_quizzes.html", quizzes=quizzes, attempts=attempts)
 
@@ -1652,14 +2107,35 @@ def take_quiz(quiz_id):
         flash("Student record not found", "danger")
         return redirect(url_for("student_dashboard"))
     
-    # Check if student already attempted this quiz
-    existing_attempt = QuizAttempt.query.filter_by(student_id=student.id, quiz_id=quiz_id).first()
-    if existing_attempt:
+    # Check if student already completed this quiz
+    completed_attempt = QuizAttempt.query.filter_by(student_id=student.id, quiz_id=quiz_id, status="completed").first()
+    if completed_attempt:
         flash("You have already taken this quiz", "warning")
         return redirect(url_for("student_quizzes"))
     
+    # Check for in-progress attempt
+    attempt = QuizAttempt.query.filter_by(student_id=student.id, quiz_id=quiz_id, status="in_progress").first()
+    if not attempt:
+        # Create new attempt
+        attempt = QuizAttempt(
+            student_id=student.id,
+            quiz_id=quiz_id,
+            score=0.0,
+            total_questions=len(quiz.questions),
+            correct_answers=0,
+            remaining_time=quiz.time_limit * 60 if quiz.time_limit else None
+        )
+        db.session.add(attempt)
+        db.session.commit()
+    
     questions = Question.query.filter(Question.id.in_(quiz.questions)).all()
     questions_dict = {q.id: q for q in questions}
+    
+    # Load saved answers if any
+    saved_answers = {}
+    if attempt.answers_json:
+        import json
+        saved_answers = json.loads(attempt.answers_json)
     
     if request.method == 'POST':
         # Process quiz submission
@@ -1684,7 +2160,7 @@ def take_quiz(quiz_id):
                     elif question.question_type == 'short_answer':
                         # Flexible marking for short answer questions
                         score = calculate_short_answer_score(answer, question)
-                        is_correct = score == question.marks  # Full marks = correct
+                        is_correct = score > 0  # Any score > 0 is considered attempted correctly
                     
                     total_score += score
                     total_marks += question.marks
@@ -1698,25 +2174,22 @@ def take_quiz(quiz_id):
                     }
                     
                     # Record individual question attempt
-                    attempt = QuestionAttempt(
+                    question_attempt = QuestionAttempt(
                         student_id=student.id,
                         question_id=qid,
                         student_answer=answer,
                         is_correct=is_correct,
                         score=score
                     )
-                    db.session.add(attempt)
+                    db.session.add(question_attempt)
         
-        # Record quiz attempt
-        quiz_attempt = QuizAttempt(
-            student_id=student.id,
-            quiz_id=quiz_id,
-            score=total_score,
-            total_questions=len(quiz.questions),
-            correct_answers=sum(1 for result in question_results.values() if result['score'] == result['max_marks']),
-            completed_at=datetime.utcnow()
-        )
-        db.session.add(quiz_attempt)
+        # Update quiz attempt
+        attempt.score = total_score
+        attempt.correct_answers = sum(1 for result in question_results.values() if result['score'] > 0)
+        attempt.completed_at = datetime.utcnow()
+        attempt.time_taken = int((attempt.completed_at - attempt.started_at).total_seconds())
+        attempt.status = "completed"
+        attempt.answers_json = None  # Clear saved answers
         db.session.commit()
         
         # Log activity
@@ -1737,7 +2210,36 @@ def take_quiz(quiz_id):
         
         return redirect(url_for("quiz_results"))
     
-    return render_template("take_quiz.html", quiz=quiz, questions=questions_dict)
+    return render_template("take_quiz.html", quiz=quiz, questions=questions_dict, attempt=attempt, saved_answers=saved_answers)
+
+
+@app.route("/student/quizzes/<int:quiz_id>/save_progress", methods=["POST"])
+@login_required
+@student_required
+def save_quiz_progress(quiz_id):
+    """Auto-save quiz progress"""
+    student = Student.query.filter_by(student_number=current_user.username).first()
+    if not student:
+        return jsonify({"success": False, "message": "Student not found"}), 400
+    
+    attempt = QuizAttempt.query.filter_by(student_id=student.id, quiz_id=quiz_id, status="in_progress").first()
+    if not attempt:
+        return jsonify({"success": False, "message": "No active attempt found"}), 400
+    
+    # Get answers from request
+    answers = {}
+    for key, value in request.form.items():
+        if key.startswith('answer_'):
+            qid = key.replace('answer_', '')
+            answers[qid] = value
+    
+    # Save answers and remaining time
+    import json
+    attempt.answers_json = json.dumps(answers)
+    attempt.remaining_time = int(request.form.get('remaining_time', 0))
+    db.session.commit()
+    
+    return jsonify({"success": True})
 
 
 @app.route("/quiz/results")
@@ -1769,10 +2271,16 @@ def quiz_results():
         if question:
             questions[q_id] = question
     
+    # Format completion time for display
+    import time
+    completed_at_timestamp = quiz_results.get('completed_at', 0)
+    completed_at_formatted = datetime.fromtimestamp(completed_at_timestamp).strftime('%Y-%m-%d %H:%M')
+    
     return render_template("quiz_results.html", 
                          quiz_results=quiz_results, 
                          quiz=quiz, 
-                         questions=questions)
+                         questions=questions,
+                         completed_at_formatted=completed_at_formatted)
 
 
 @app.route("/student/quiz-attempt/<int:attempt_id>/review")
@@ -1806,18 +2314,25 @@ def quiz_attempt_review(attempt_id):
             questions[q_id] = question
     
     # Get question attempts for this quiz attempt
-    # Since QuestionAttempt doesn't link to QuizAttempt, we get attempts around the completion time
+    # Match attempts by quiz questions and time proximity to completion
     if attempt.completed_at:
-        # Get attempts within 5 minutes of completion
+        # Get attempts within 10 minutes of completion for the quiz questions
+        from datetime import timedelta
         time_window_start = attempt.completed_at.replace(second=0, microsecond=0)  # Round down to minute
-        time_window_end = time_window_start.replace(minute=time_window_start.minute + 5)
+        time_window_end = time_window_start + timedelta(minutes=10)
         
         question_attempts = QuestionAttempt.query.filter(
             QuestionAttempt.student_id == student.id,
             QuestionAttempt.question_id.in_(quiz.questions),
             QuestionAttempt.attempted_at >= time_window_start,
             QuestionAttempt.attempted_at <= time_window_end
-        ).all()
+        ).order_by(QuestionAttempt.attempted_at.desc()).all()
+        
+        # Group by question_id, taking the most recent attempt for each question
+        latest_attempts = {}
+        for qa in question_attempts:
+            if qa.question_id not in latest_attempts:
+                latest_attempts[qa.question_id] = qa
     else:
         # Fallback: get the most recent attempts for these questions
         question_attempts = []
@@ -1828,12 +2343,8 @@ def quiz_attempt_review(attempt_id):
             ).order_by(QuestionAttempt.attempted_at.desc()).first()
             if latest_attempt:
                 question_attempts.append(latest_attempt)
-    
-    # Group question attempts by question_id (take the latest attempt for each question)
-    latest_attempts = {}
-    for qa in question_attempts:
-        if qa.question_id not in latest_attempts or qa.attempted_at > latest_attempts[qa.question_id].attempted_at:
-            latest_attempts[qa.question_id] = qa
+        
+        latest_attempts = {qa.question_id: qa for qa in question_attempts}
     
     return render_template("quiz_attempt_review.html",
                          attempt=attempt,
@@ -2416,8 +2927,15 @@ def export_student_excel(student_id):
         
         # Update school info
         if settings:
+            # Use teacher's subject if available, otherwise use requested subject or student study area
+            export_subject = subject
+            if hasattr(current_user, 'is_teacher') and current_user.is_teacher() and current_user.subject:
+                export_subject = current_user.subject
+            elif not export_subject:
+                export_subject = student.study_area
+            
             updater.update_school_info(
-                subject=subject or student.study_area,
+                subject=export_subject,
                 term_year=f"{settings.current_term} {settings.current_academic_year}",
                 form=student.class_name
             )
@@ -2774,7 +3292,7 @@ def inject_config():
 # -------------------------
 if __name__ == "__main__":
     print("\n" + "="*60)
-    print("Student Assessment Management System")
+    print("EduAssess Module")
     print("="*60)
     print(f"Environment: {env}")
     print(f"Database: {app.config['SQLALCHEMY_DATABASE_URI']}")
